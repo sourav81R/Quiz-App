@@ -1,0 +1,213 @@
+/* ===== Global Styles ===== */
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  margin: 0;
+  padding: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100vh;
+  color: #333;
+}
+
+h1, h2, h3 {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  margin: 8px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
+}
+
+/* ===== Start Screen ===== */
+#start-screen {
+  margin-top: 50px;
+  text-align: center;
+}
+
+#quiz-buttons button {
+  background: #4a90e2;
+  color: white;
+}
+
+/* ===== Quiz Container ===== */
+#quiz-container {
+  width: 650px;
+  max-width: 95%;
+  background: #fff;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+  margin-top: 50px;
+}
+
+#quiz-title {
+  font-size: 1.5rem;
+  margin-bottom: 20px;
+}
+
+/* ===== Question Block (whole card changes color) ===== */
+.question-card {
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 20px;
+  color: #333;
+  box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+}
+
+.gradient-1 { background: linear-gradient(135deg, #f6d365, #fda085); }
+.gradient-2 { background: linear-gradient(135deg, #89f7fe, #66a6ff); }
+.gradient-3 { background: linear-gradient(135deg, #a1c4fd, #c2e9fb); }
+.gradient-4 { background: linear-gradient(135deg, #ff9a9e, #fad0c4); }
+.gradient-5 { background: linear-gradient(135deg, #cfd9df, #e2ebf0); }
+.gradient-6 { background: linear-gradient(135deg, #84fab0, #8fd3f4); }
+
+#options-list {
+  list-style: none;
+  padding: 0;
+  margin: 20px 0;
+}
+
+#options-list li {
+  margin: 10px 0;
+}
+
+#options-list label {
+  display: block;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 12px;
+  border-radius: 8px;
+  transition: 0.3s;
+  cursor: pointer;
+}
+
+#options-list input {
+  margin-right: 10px;
+}
+
+/* Highlighting answers */
+.correct {
+  background: #d4edda !important;
+  border: 1px solid #28a745;
+  color: #155724;
+}
+
+.wrong {
+  background: #f8d7da !important;
+  border: 1px solid #dc3545;
+  color: #721c24;
+}
+
+/* ===== Navigation Buttons ===== */
+.navigation {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+#prev-btn {
+  background: #ff9800;
+  color: white;
+}
+#prev-btn:hover { background: #e68900; }
+
+#next-btn {
+  background: #007bff;
+  color: white;
+}
+
+#finish-btn {
+  background: #28a745;
+  color: white;
+}
+
+/* ===== Progress Bar ===== */
+#progress-container {
+  width: 100%;
+  height: 12px;
+  background: #e0e0e0;
+  border-radius: 6px;
+  margin: 15px 0 8px 0;
+  overflow: hidden;
+}
+
+#progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #4a90e2, #28a745);
+  border-radius: 6px;
+  transition: width 0.4s ease;
+}
+
+#progress-text {
+  text-align: right;
+  font-size: 0.9rem;
+  color: #555;
+  margin-bottom: 10px;
+}
+
+/* ===== Feedback Text ===== */
+#answer-feedback {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-top: 10px;
+}
+
+.feedback-correct {
+  color: #28a745;
+}
+
+.feedback-wrong {
+  color: #dc3545;
+}
+
+/* ===== Result Screen ===== */
+#result-screen {
+  width: 650px;
+  max-width: 95%;
+  background: #fff;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+  margin-top: 50px;
+  text-align: center;
+}
+
+#score-text {
+  font-size: 1.3rem;
+  margin-bottom: 20px;
+}
+
+.result-item {
+  text-align: left;
+  border-radius: 8px;
+  padding: 10px;
+  margin: 12px 0;
+}
+
+.result-item.correct {
+  background: #d4edda;
+  border-left: 6px solid #28a745;
+}
+
+.result-item.wrong {
+  background: #f8d7da;
+  border-left: 6px solid #dc3545;
+}
+
+#result-screen button {
+  background: #4a90e2;
+  color: white;
+}
