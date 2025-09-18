@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Quiz App</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- Start Screen -->
@@ -18,23 +18,32 @@
     </div>
   </div>
 
-  <!-- Quiz Container -->
-  <div id="quiz-container" style="display: none;">
-    <h2 id="quiz-title"></h2>
+  <!-- Quiz Screen -->
+  <div id="quiz-container" style="display:none;">
+    
+    <!-- QUIZ HEADER (Mute + Title + Timer) -->
+    <div id="quiz-header">
+  <button id="mute-btn" class="mute-btn" onclick="toggleMute()">🔊</button>
+  <h2 id="quiz-title"></h2>
+  <div id="quiz-timer" class="quiz-timer">
+    <span id="timer-text" class="timer-text">10</span>
+  </div>
+</div>
 
-    <!-- Progress Bar -->
+    <!-- Progress bar -->
     <div id="progress-container">
       <div id="progress-bar"></div>
+      <p id="progress-text"></p>
     </div>
-    <p id="progress-text"></p>
 
-    <!-- Question + Options Block -->
+    <!-- Question -->
     <div id="question-block"></div>
 
-    <div class="navigation">
-      <button type="button" id="prev-btn" onclick="prevQuestion()">⬅ Previous</button>
-      <button type="button" id="next-btn" onclick="nextQuestion()">Next ➡</button>
-      <button type="button" id="finish-btn" onclick="finishQuiz()">Finish ✅</button>
+    <!-- Navigation -->
+    <div id="navigation">
+      <button id="prev-btn" onclick="prevQuestion()">Previous</button>
+      <button id="next-btn" onclick="nextQuestion()">Next</button>
+      <button id="finish-btn" onclick="finishQuiz()">Finish</button>
     </div>
   </div>
 

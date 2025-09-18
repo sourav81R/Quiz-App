@@ -56,9 +56,84 @@ button:hover {
 #quiz-title {
   font-size: 1.5rem;
   margin-bottom: 20px;
+  text-align: center;
+  flex: 1;
 }
 
-/* ===== Question Block (whole card changes color) ===== */
+/* ===== QUIZ HEADER (mute + title + timer row) ===== */
+#quiz-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+/* ===== Mute button styling ===== */
+.mute-btn,
+#mute-btn {
+  background: #222;
+  color: #00ffcc;
+  border: none;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  width: 45px;
+  height: 45px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  transition: 0.3s;
+
+  /* Center the icon */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mute-btn:hover,
+#mute-btn:hover {
+  background: #00ffcc;
+  color: #111;
+}
+
+/* ===== Timer styling ===== */
+.quiz-timer {
+ 
+
+  /* Flex center */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  font-family: 'Courier New', monospace;
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: hwb(0 0% 100%);
+
+  text-align: center;
+  position: relative;
+}
+
+.quiz-timer .timer-text {
+  position: relative;
+  top: 1px;   /* ✅ Push text a little lower */
+}
+
+
+
+/* Blinking warning in last 3 seconds */
+.timer-warning {
+  color: #ff4444 !important;
+  border-color: #ff4444 !important;
+  box-shadow: 0 0 15px rgba(255, 0, 0, 0.9) !important;
+  animation: blink 1s step-start infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* ===== Question Block ===== */
 .question-card {
   padding: 20px;
   border-radius: 12px;
@@ -95,19 +170,6 @@ button:hover {
 
 #options-list input {
   margin-right: 10px;
-}
-
-/* Highlighting answers */
-.correct {
-  background: #d4edda !important;
-  border: 1px solid #28a745;
-  color: #155724;
-}
-
-.wrong {
-  background: #f8d7da !important;
-  border: 1px solid #dc3545;
-  color: #721c24;
 }
 
 /* ===== Navigation Buttons ===== */
@@ -156,21 +218,6 @@ button:hover {
   font-size: 0.9rem;
   color: #555;
   margin-bottom: 10px;
-}
-
-/* ===== Feedback Text ===== */
-#answer-feedback {
-  font-size: 1.1rem;
-  font-weight: bold;
-  margin-top: 10px;
-}
-
-.feedback-correct {
-  color: #28a745;
-}
-
-.feedback-wrong {
-  color: #dc3545;
 }
 
 /* ===== Result Screen ===== */

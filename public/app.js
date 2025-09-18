@@ -4,7 +4,52 @@ let currentQuestionIndex = 0;
 let score = 0;
 let userAnswers = [];
 
-// Start a quiz
+let timerInterval = null;
+let timeLeft = 10;
+
+// ================== MUTE STATE ==================
+let isMuted = localStorage.getItem("quizMuted") === "true";
+
+// Init mute button
+function initMuteButton() {
+  const muteBtn = document.getElementById("mute-btn");
+  if (muteBtn) muteBtn.textContent = isMuted ? "🔇" : "🔊";
+
+  const quizTimer = document.getElementById("quiz-timer");
+  if (quizTimer) quizTimer.style.display = isMuted ? "none" : "block";
+}
+
+// Toggle mute + hide timer if muted
+function toggleMute() {
+  isMuted = !isMuted;
+  localStorage.setItem("quizMuted", isMuted);
+
+  const muteBtn = document.getElementById("mute-btn");
+  const quizTimer = document.getElementById("quiz-timer");
+
+  muteBtn.textContent = isMuted ? "🔇" : "🔊";
+  quizTimer.style.display = isMuted ? "none" : "block";
+
+  if (isMuted && window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+// ================== SPEECH ==================
+function speak(text, callback) {
+  if (isMuted) return; // don’t speak if muted
+  if (window.speechSynthesis) window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  utterance.volume = 1;
+
+  if (callback) utterance.onend = callback;
+  window.speechSynthesis.speak(utterance);
+}
+
+// ================== LOAD QUIZ ==================
 async function loadQuiz(quizName) {
   currentQuiz = quizName;
   currentQuestionIndex = 0;
@@ -12,7 +57,6 @@ async function loadQuiz(quizName) {
   userAnswers = [];
 
   try {
-    // Replace with your backend or JSON file
     const res = await fetch(`http://localhost:5000/api/questions/${quizName}`);
     questions = await res.json();
 
@@ -25,33 +69,45 @@ async function loadQuiz(quizName) {
     document.getElementById("quiz-container").style.display = "block";
     document.getElementById("quiz-title").textContent = quizName;
 
-    showQuestion();
+    initMuteButton();
+
+    // Reset timer display
+    document.getElementById("quiz-timer").innerHTML = formatTime(10);
+
+    // Speak quiz type and then show question
+    speak(`You have selected ${quizName} quiz. Let's begin!`, () => {
+      showQuestion();
+    });
   } catch (error) {
     console.error("Error loading quiz:", error);
   }
 }
 
-// Show a question
+// ================== SHOW QUESTION ==================
 function showQuestion() {
+  clearTimers();
+
   const questionObj = questions[currentQuestionIndex];
-
-  const gradients = ["gradient-1", "gradient-2", "gradient-3", "gradient-4", "gradient-5", "gradient-6"];
-  const gradientClass = gradients[currentQuestionIndex % gradients.length];
-
   const block = document.getElementById("question-block");
+
+  // Pick gradient class (cycle through 1–6)
+  const gradientClass = `gradient-${(currentQuestionIndex % 6) + 1}`;
+
   block.innerHTML = `
     <div class="question-card ${gradientClass}">
-      <h3>Q${currentQuestionIndex + 1}: ${questionObj.question}</h3>
+      <h3>Q${currentQuestionIndex + 1}: ${escapeHtml(questionObj.question)}</h3>
       <ul id="options-list">
         ${questionObj.options
           .map(
             (opt) => `
             <li>
               <label>
-                <input type="radio" name="option" value="${opt}"
-                  onchange="checkAnswer('${opt}', '${questionObj.answer}')"
-                  ${userAnswers[currentQuestionIndex] === opt ? "checked" : ""}>
-                ${opt}
+                <input type="radio" name="option" value="${escapeHtml(opt)}"
+                  onchange="checkAnswer('${escapeJs(opt)}','${escapeJs(
+    questionObj.answer
+  )}')"
+                  ${userAnswers[currentQuestionIndex] === opt ? "checked" : ""}/>
+                ${escapeHtml(opt)}
               </label>
             </li>
           `
@@ -62,7 +118,7 @@ function showQuestion() {
     </div>
   `;
 
-  // Show/hide navigation buttons
+  // navigation buttons
   document.getElementById("prev-btn").style.display =
     currentQuestionIndex === 0 ? "none" : "inline-block";
   document.getElementById("next-btn").style.display =
@@ -70,15 +126,68 @@ function showQuestion() {
   document.getElementById("finish-btn").style.display =
     currentQuestionIndex === questions.length - 1 ? "inline-block" : "none";
 
-  // Update progress bar
+  // progress
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
   document.getElementById("progress-bar").style.width = progress + "%";
-  document.getElementById("progress-text").textContent =
-    `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+  document.getElementById(
+    "progress-text"
+  ).textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
+
+  // speak question + options
+  let textToSpeak = `Question ${
+    currentQuestionIndex + 1
+  }. ${questionObj.question}. Options are: `;
+  questionObj.options.forEach((opt, i) => {
+    textToSpeak += `Option ${i + 1}, ${opt}. `;
+  });
+
+  speak(textToSpeak, () => startAnswerTimer());
 }
 
-// Check Answer immediately
-function checkAnswer(selected, correct) {
+// ================== START TIMER ==================
+function startAnswerTimer() {
+  if (timerInterval) clearInterval(timerInterval);
+
+  timeLeft = 10;
+  const timerEl = document.getElementById("quiz-timer");
+  timerEl.innerHTML = formatTime(timeLeft);
+  timerEl.classList.remove("timer-warning");
+
+  timerInterval = setInterval(() => {
+    timeLeft--;
+
+    if (timeLeft <= 3 && timeLeft > 0) {
+      timerEl.classList.add("timer-warning");
+      playBeep();
+    }
+
+    timerEl.innerHTML = formatTime(timeLeft);
+
+    if (timeLeft <= 0) {
+      clearInterval(timerInterval);
+      timerEl.classList.remove("timer-warning");
+
+      if (!userAnswers[currentQuestionIndex]) {
+        speak("Time's up! Moving to the next question.", () => {
+          if (currentQuestionIndex < questions.length - 1) {
+            currentQuestionIndex++;
+            showQuestion();
+          } else {
+            finishQuiz();
+          }
+        });
+      }
+    }
+  }, 1000);
+}
+
+// ================== CHECK ANSWER ==================
+function checkAnswer(selectedEscaped, correctEscaped) {
+  clearTimers();
+
+  const selected = selectedEscaped;
+  const correct = correctEscaped;
+
   const options = document.querySelectorAll("input[name='option']");
   options.forEach((opt) => {
     opt.disabled = true;
@@ -92,37 +201,46 @@ function checkAnswer(selected, correct) {
 
   userAnswers[currentQuestionIndex] = selected;
   const feedback = document.getElementById("answer-feedback");
+
   if (selected === correct) {
     score++;
-    feedback.innerHTML = "<span class='feedback-correct'>✅ Correct!</span>";
+    if (feedback) feedback.innerHTML = "✅ Correct!";
+    speak("Correct answer!", () => nextQuestion());
   } else {
-    feedback.innerHTML = "<span class='feedback-wrong'>❌ Wrong!</span>";
+    if (feedback) feedback.innerHTML = "❌ Wrong!";
+    speak(`Wrong. The correct answer is ${correct}`, () => nextQuestion());
   }
 }
 
-// Next button
+// ================== NAVIGATION ==================
 function nextQuestion() {
+  clearTimers();
   if (currentQuestionIndex < questions.length - 1) {
     currentQuestionIndex++;
     showQuestion();
+  } else {
+    finishQuiz();
   }
 }
 
-// Previous button
 function prevQuestion() {
+  clearTimers();
   if (currentQuestionIndex > 0) {
     currentQuestionIndex--;
     showQuestion();
   }
 }
 
-// Finish quiz
+// ================== FINISH QUIZ ==================
 function finishQuiz() {
+  clearTimers();
   document.getElementById("quiz-container").style.display = "none";
   document.getElementById("result-screen").style.display = "block";
 
-  document.getElementById("score-text").textContent =
-    `You scored ${score} out of ${questions.length}.`;
+  const scoreText = `You scored ${score} out of ${questions.length}.`;
+  document.getElementById("score-text").textContent = scoreText;
+
+  speak(scoreText);
 
   const detailedResults = document.getElementById("detailed-results");
   detailedResults.innerHTML = questions
@@ -131,11 +249,9 @@ function finishQuiz() {
       return `
         <div class="result-item ${isCorrect ? "correct" : "wrong"}">
           <p><strong>Q${i + 1}:</strong> ${q.question}</p>
-          <p><strong>Your Answer:</strong> ${userAnswers[i] || "Not Attempted"} 
-            ${isCorrect 
-              ? "<span class='feedback-correct'>(Correct)</span>" 
-              : "<span class='feedback-wrong'>(Wrong)</span>"}
-          </p>
+          <p><strong>Your Answer:</strong> ${
+            userAnswers[i] || "Not Attempted"
+          } ${isCorrect ? "(Correct)" : "(Wrong)"}</p>
           <p><strong>Correct Answer:</strong> ${q.answer}</p>
         </div>
       `;
@@ -143,8 +259,42 @@ function finishQuiz() {
     .join("");
 }
 
-// Restart quiz
-function restartQuiz() {
-  document.getElementById("result-screen").style.display = "none";
-  document.getElementById("start-screen").style.display = "block";
+// ================== HELPERS ==================
+function clearTimers() {
+  if (timerInterval) clearInterval(timerInterval);
+}
+
+function formatTime(seconds) {
+  return `00:${seconds < 10 ? "0" : ""}${seconds}`;
+}
+
+function playBeep() {
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = ctx.createOscillator();
+  const gainNode = ctx.createGain();
+
+  oscillator.type = "sine";
+  oscillator.frequency.setValueAtTime(800, ctx.currentTime);
+  gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+
+  oscillator.connect(gainNode);
+  gainNode.connect(ctx.destination);
+
+  oscillator.start();
+  oscillator.stop(ctx.currentTime + 0.2);
+}
+
+function escapeHtml(unsafe) {
+  if (!unsafe && unsafe !== 0) return "";
+  return String(unsafe)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function escapeJs(str) {
+  if (!str && str !== 0) return "";
+  return String(str).replace(/'/g, "\\'");
 }
