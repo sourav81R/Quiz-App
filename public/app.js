@@ -1,3 +1,5 @@
+// ===== app.js =====
+
 let currentQuiz = "";
 let questions = [];
 let currentQuestionIndex = 0;
@@ -10,16 +12,14 @@ let timeLeft = 10;
 // ================== MUTE STATE ==================
 let isMuted = localStorage.getItem("quizMuted") === "true";
 
-// Init mute button
 function initMuteButton() {
   const muteBtn = document.getElementById("mute-btn");
   if (muteBtn) muteBtn.textContent = isMuted ? "🔇" : "🔊";
 
   const quizTimer = document.getElementById("quiz-timer");
-  if (quizTimer) quizTimer.style.display = isMuted ? "none" : "block";
+  if (quizTimer) quizTimer.style.display = isMuted ? "none" : "flex";
 }
 
-// Toggle mute + hide timer if muted
 function toggleMute() {
   isMuted = !isMuted;
   localStorage.setItem("quizMuted", isMuted);
@@ -27,17 +27,20 @@ function toggleMute() {
   const muteBtn = document.getElementById("mute-btn");
   const quizTimer = document.getElementById("quiz-timer");
 
-  muteBtn.textContent = isMuted ? "🔇" : "🔊";
-  quizTimer.style.display = isMuted ? "none" : "block";
+  if (muteBtn) muteBtn.textContent = isMuted ? "🔇" : "🔊";
+  if (quizTimer) quizTimer.style.display = isMuted ? "none" : "flex";
 
-  if (isMuted && window.speechSynthesis.speaking) {
+  if (isMuted && window.speechSynthesis && window.speechSynthesis.speaking) {
     window.speechSynthesis.cancel();
   }
 }
 
 // ================== SPEECH ==================
 function speak(text, callback) {
-  if (isMuted) return; // don’t speak if muted
+  if (isMuted) {
+    if (callback) callback();
+    return;
+  }
   if (window.speechSynthesis) window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text);
@@ -60,7 +63,7 @@ async function loadQuiz(quizName) {
     const res = await fetch(`http://localhost:5000/api/questions/${quizName}`);
     questions = await res.json();
 
-    if (!questions.length) {
+    if (!questions || !questions.length) {
       alert("No questions found for " + quizName);
       return;
     }
@@ -71,15 +74,16 @@ async function loadQuiz(quizName) {
 
     initMuteButton();
 
-    // Reset timer display
-    document.getElementById("quiz-timer").innerHTML = formatTime(10);
+    const timerSpan = document.getElementById("timer-text");
+    if (timerSpan) timerSpan.textContent = formatTime(10);
 
-    // Speak quiz type and then show question
-    speak(`You have selected ${quizName} quiz. Let's begin!`, () => {
-      showQuestion();
-    });
+    document.getElementById("progress-bar").style.width = "0%";
+    document.getElementById("progress-text").textContent = "";
+
+    speak(`${quizName} quiz started. Let's begin!`, () => showQuestion());
   } catch (error) {
     console.error("Error loading quiz:", error);
+    alert("Failed to load quiz. Check backend connection!");
   }
 }
 
@@ -88,9 +92,9 @@ function showQuestion() {
   clearTimers();
 
   const questionObj = questions[currentQuestionIndex];
-  const block = document.getElementById("question-block");
+  if (!questionObj) return;
 
-  // Pick gradient class (cycle through 1–6)
+  const block = document.getElementById("question-block");
   const gradientClass = `gradient-${(currentQuestionIndex % 6) + 1}`;
 
   block.innerHTML = `
@@ -100,17 +104,15 @@ function showQuestion() {
         ${questionObj.options
           .map(
             (opt) => `
-            <li>
-              <label>
-                <input type="radio" name="option" value="${escapeHtml(opt)}"
-                  onchange="checkAnswer('${escapeJs(opt)}','${escapeJs(
-    questionObj.answer
-  )}')"
-                  ${userAnswers[currentQuestionIndex] === opt ? "checked" : ""}/>
-                ${escapeHtml(opt)}
-              </label>
-            </li>
-          `
+          <li>
+            <label>
+              <input type="radio" name="option" value="${escapeHtml(opt)}"
+                onchange="checkAnswer('${escapeJs(opt)}','${escapeJs(questionObj.answer)}')"
+                ${userAnswers[currentQuestionIndex] === opt ? "checked" : ""}/>
+              ${escapeHtml(opt)}
+            </label>
+          </li>
+        `
           )
           .join("")}
       </ul>
@@ -118,7 +120,6 @@ function showQuestion() {
     </div>
   `;
 
-  // navigation buttons
   document.getElementById("prev-btn").style.display =
     currentQuestionIndex === 0 ? "none" : "inline-block";
   document.getElementById("next-btn").style.display =
@@ -126,17 +127,15 @@ function showQuestion() {
   document.getElementById("finish-btn").style.display =
     currentQuestionIndex === questions.length - 1 ? "inline-block" : "none";
 
-  // progress
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100;
   document.getElementById("progress-bar").style.width = progress + "%";
-  document.getElementById(
-    "progress-text"
-  ).textContent = `Question ${currentQuestionIndex + 1} of ${questions.length}`;
-
-  // speak question + options
-  let textToSpeak = `Question ${
+  document.getElementById("progress-text").textContent = `Question ${
     currentQuestionIndex + 1
-  }. ${questionObj.question}. Options are: `;
+  } of ${questions.length}`;
+
+  let textToSpeak = `Question ${currentQuestionIndex + 1}. ${
+    questionObj.question
+  }. Options are: `;
   questionObj.options.forEach((opt, i) => {
     textToSpeak += `Option ${i + 1}, ${opt}. `;
   });
@@ -144,38 +143,22 @@ function showQuestion() {
   speak(textToSpeak, () => startAnswerTimer());
 }
 
-// ================== START TIMER ==================
+// ================== TIMER ==================
 function startAnswerTimer() {
   if (timerInterval) clearInterval(timerInterval);
 
   timeLeft = 10;
-  const timerEl = document.getElementById("quiz-timer");
-  timerEl.innerHTML = formatTime(timeLeft);
-  timerEl.classList.remove("timer-warning");
+  const timerSpan = document.getElementById("timer-text");
+  if (timerSpan) timerSpan.textContent = formatTime(timeLeft);
 
   timerInterval = setInterval(() => {
     timeLeft--;
-
-    if (timeLeft <= 3 && timeLeft > 0) {
-      timerEl.classList.add("timer-warning");
-      playBeep();
-    }
-
-    timerEl.innerHTML = formatTime(timeLeft);
+    if (timerSpan) timerSpan.textContent = formatTime(timeLeft);
 
     if (timeLeft <= 0) {
       clearInterval(timerInterval);
-      timerEl.classList.remove("timer-warning");
-
       if (!userAnswers[currentQuestionIndex]) {
-        speak("Time's up! Moving to the next question.", () => {
-          if (currentQuestionIndex < questions.length - 1) {
-            currentQuestionIndex++;
-            showQuestion();
-          } else {
-            finishQuiz();
-          }
-        });
+        speak("Time's up! Moving to the next question.", () => nextQuestion());
       }
     }
   }, 1000);
@@ -191,23 +174,19 @@ function checkAnswer(selectedEscaped, correctEscaped) {
   const options = document.querySelectorAll("input[name='option']");
   options.forEach((opt) => {
     opt.disabled = true;
-    if (opt.value === correct) {
-      opt.parentElement.classList.add("correct");
-    }
-    if (opt.checked && opt.value !== correct) {
-      opt.parentElement.classList.add("wrong");
-    }
+    if (opt.value === correct) opt.parentElement.classList.add("correct");
+    if (opt.checked && opt.value !== correct) opt.parentElement.classList.add("wrong");
   });
 
   userAnswers[currentQuestionIndex] = selected;
-  const feedback = document.getElementById("answer-feedback");
 
+  const feedback = document.getElementById("answer-feedback");
   if (selected === correct) {
     score++;
-    if (feedback) feedback.innerHTML = "✅ Correct!";
+    feedback.innerHTML = "✅ Correct!";
     speak("Correct answer!", () => nextQuestion());
   } else {
-    if (feedback) feedback.innerHTML = "❌ Wrong!";
+    feedback.innerHTML = "❌ Wrong!";
     speak(`Wrong. The correct answer is ${correct}`, () => nextQuestion());
   }
 }
@@ -239,7 +218,6 @@ function finishQuiz() {
 
   const scoreText = `You scored ${score} out of ${questions.length}.`;
   document.getElementById("score-text").textContent = scoreText;
-
   speak(scoreText);
 
   const detailedResults = document.getElementById("detailed-results");
@@ -247,41 +225,43 @@ function finishQuiz() {
     .map((q, i) => {
       const isCorrect = userAnswers[i] === q.answer;
       return `
-        <div class="result-item ${isCorrect ? "correct" : "wrong"}">
-          <p><strong>Q${i + 1}:</strong> ${q.question}</p>
-          <p><strong>Your Answer:</strong> ${
-            userAnswers[i] || "Not Attempted"
-          } ${isCorrect ? "(Correct)" : "(Wrong)"}</p>
-          <p><strong>Correct Answer:</strong> ${q.answer}</p>
-        </div>
-      `;
+      <div class="result-item ${isCorrect ? "correct" : "wrong"}">
+        <p><strong>Q${i + 1}:</strong> ${q.question}</p>
+        <p><strong>Your Answer:</strong> ${userAnswers[i] || "Not Attempted"} ${
+        isCorrect ? "(Correct)" : "(Wrong)"
+      }</p>
+        <p><strong>Correct Answer:</strong> ${q.answer}</p>
+      </div>
+    `;
     })
     .join("");
 }
 
 // ================== HELPERS ==================
 function clearTimers() {
-  if (timerInterval) clearInterval(timerInterval);
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 }
 
 function formatTime(seconds) {
-  return `00:${seconds < 10 ? "0" : ""}${seconds}`;
+  return `${seconds < 10 ? "00:0" + seconds : "00:" + seconds}`;
 }
 
 function playBeep() {
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-  const oscillator = ctx.createOscillator();
-  const gainNode = ctx.createGain();
-
-  oscillator.type = "sine";
-  oscillator.frequency.setValueAtTime(800, ctx.currentTime);
-  gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
-
-  oscillator.connect(gainNode);
-  gainNode.connect(ctx.destination);
-
-  oscillator.start();
-  oscillator.stop(ctx.currentTime + 0.2);
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = ctx.createOscillator();
+    const gainNode = ctx.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(800, ctx.currentTime);
+    gainNode.gain.setValueAtTime(0.2, ctx.currentTime);
+    oscillator.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    oscillator.start();
+    oscillator.stop(ctx.currentTime + 0.15);
+  } catch (e) {}
 }
 
 function escapeHtml(unsafe) {
@@ -298,3 +278,31 @@ function escapeJs(str) {
   if (!str && str !== 0) return "";
   return String(str).replace(/'/g, "\\'");
 }
+
+// ================== RESTART QUIZ ==================
+function restartQuiz() {
+  clearTimers();
+  if (window.speechSynthesis && window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+  }
+
+  document.getElementById("result-screen").style.display = "none";
+  document.getElementById("quiz-container").style.display = "none";
+  document.getElementById("start-screen").style.display = "block";
+
+  currentQuiz = "";
+  questions = [];
+  currentQuestionIndex = 0;
+  score = 0;
+  userAnswers = [];
+  timeLeft = 10;
+
+  document.getElementById("progress-bar").style.width = "0%";
+  document.getElementById("progress-text").textContent = "";
+  document.getElementById("quiz-title").textContent = "";
+
+  initMuteButton();
+  speak("Quiz restarted. Please choose a new quiz.");
+}
+
+document.addEventListener("DOMContentLoaded", initMuteButton);

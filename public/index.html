@@ -20,15 +20,19 @@
 
   <!-- Quiz Screen -->
   <div id="quiz-container" style="display:none;">
-    
     <!-- QUIZ HEADER (Mute + Title + Timer) -->
     <div id="quiz-header">
-  <button id="mute-btn" class="mute-btn" onclick="toggleMute()">🔊</button>
-  <h2 id="quiz-title"></h2>
-  <div id="quiz-timer" class="quiz-timer">
-    <span id="timer-text" class="timer-text">10</span>
-  </div>
-</div>
+      <!-- Left: Mute button -->
+      <button id="mute-btn" class="mute-btn" onclick="toggleMute()">🔊</button>
+
+      <!-- Center: Title -->
+      <h2 id="quiz-title"></h2>
+
+      <!-- Right: Timer -->
+      <div id="quiz-timer" class="quiz-timer" aria-live="polite">
+        <span id="timer-text" class="timer-text">00:10</span>
+      </div>
+    </div>
 
     <!-- Progress bar -->
     <div id="progress-container">
@@ -52,9 +56,12 @@
     <h2>🎉 Quiz Completed!</h2>
     <p id="score-text"></p>
     <div id="detailed-results"></div>
-    <button type="button" onclick="restartQuiz()">🔄 Restart</button>
+    <!-- give the restart button an id so JS can reliably hook it -->
+    <button id="restart-btn" type="button" onclick="restartQuiz()">🔄 Restart</button>
   </div>
 
   <script src="app.js"></script>
+  <script src="question.json"></script>
+
 </body>
 </html>
