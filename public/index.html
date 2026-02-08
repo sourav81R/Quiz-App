@@ -7,14 +7,69 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+
+  <!-- Login Screen -->
+  <div id="login-screen">
+    <div class="auth-container">
+      <h1>🎓 Quiz Master</h1>
+      <p class="subtitle">Test Your Knowledge</p>
+      
+      <!-- Login Form -->
+      <div id="login-form" class="auth-form" style="display: none;">
+        <h2>Login</h2>
+        <div class="input-group">
+          <label for="login-email">Email Address</label>
+          <input type="email" id="login-email" placeholder="Enter your email" required="">
+        </div>
+        <div class="input-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Enter your password" required="">
+        </div>
+        <button onclick="handleLogin()">Login</button>
+        <p class="form-switch">Don't have an account? <a onclick="showRegister()">Register</a></p>
+      </div>
+
+      <!-- Register Form (hidden by default) -->
+      <div id="register-form" class="auth-form" style="display: block;">
+        <h2>Create Account</h2>
+        <div class="input-group">
+          <label for="register-name">Full Name</label>
+          <input type="text" id="register-name" placeholder="John Doe" required="">
+        </div>
+        <div class="input-group">
+          <label for="register-email">Email Address</label>
+          <input type="email" id="register-email" placeholder="john@example.com" required="">
+        </div>
+        <div class="input-group">
+          <label for="register-password">Password</label>
+          <input type="password" id="register-password" placeholder="Create a password" required="">
+        </div>
+        <div class="input-group">
+          <label for="register-confirm-password">Confirm Password</label>
+          <input type="password" id="register-confirm-password" placeholder="Confirm your password" required="">
+        </div>
+        <button onclick="handleRegister()">Register</button>
+        <p class="form-switch">Already have an account? <a onclick="showLogin()">Login</a></p>
+      </div>
+
+      <div id="auth-message" class="auth-message" style="display: none;"></div>
+    </div>
+  </div>
+
   <!-- Start Screen -->
-  <div id="start-screen">
-    <h1>Choose a Quiz</h1>
-    <div id="quiz-buttons">
-      <button type="button" onclick="loadQuiz('General Knowledge')">General Knowledge</button>
-      <button type="button" onclick="loadQuiz('Mathematics')">Mathematics</button>
-      <button type="button" onclick="loadQuiz('Politics')">Politics</button>
-      <button type="button" onclick="loadQuiz('Nature')">Nature</button>
+  <div id="start-screen" style="display:none;">
+    <div class="start-container">
+      <div class="user-info">
+        <p id="user-welcome"></p>
+        <button onclick="handleLogout()" class="logout-btn">Logout</button>
+      </div>
+      <h1>Choose a Quiz</h1>
+      <div id="quiz-buttons">
+        <button type="button" onclick="loadQuiz('General Knowledge')">General Knowledge</button>
+        <button type="button" onclick="loadQuiz('Mathematics')">Mathematics</button>
+        <button type="button" onclick="loadQuiz('Politics')">Politics</button>
+        <button type="button" onclick="loadQuiz('Nature')">Nature</button>
+      </div>
     </div>
   </div>
 
@@ -57,11 +112,9 @@
     <p id="score-text"></p>
     <div id="detailed-results"></div>
     <!-- give the restart button an id so JS can reliably hook it -->
-    <button id="restart-btn" type="button" onclick="restartQuiz()">🔄 Restart</button>
+    <button id="restart-btn" type="button" onclick="restartQuiz()">🔄 Take Another Quiz</button>
   </div>
 
   <script src="app.js"></script>
-  <script src="question.json"></script>
-
 </body>
 </html>
