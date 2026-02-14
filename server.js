@@ -65,16 +65,29 @@ const loadFallbackQuestions = () => {
 
 let questionsData = loadFallbackQuestions();
 let mongoConnected = false;
-const isDatabaseReady = () => mongoConnected && mongoose.connection.readyState === 1;
+let mongoConnectPromise = null;
+const isDatabaseReady = () => mongoose.connection.readyState === 1;
 
 const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const mongoUri = normalizeMongoUri(rawMongoUri);
 
-if (!mongoUri) {
-  console.warn("Warning: MONGODB_URI or MONGO_URI is missing. Running in fallback mode.");
-} else {
+const ensureMongoConnection = async () => {
+  if (!mongoUri) {
+    mongoConnected = false;
+    return false;
+  }
+
+  if (isDatabaseReady()) {
+    mongoConnected = true;
+    return true;
+  }
+
+  if (mongoConnectPromise) {
+    return mongoConnectPromise;
+  }
+
   console.log(`Connecting to MongoDB: ${maskMongoUri(mongoUri)}`);
-  mongoose
+  mongoConnectPromise = mongoose
     .connect(mongoUri, {
       serverSelectionTimeoutMS: 10000,
       socketTimeoutMS: 45000,
@@ -83,11 +96,24 @@ if (!mongoUri) {
     .then(() => {
       mongoConnected = true;
       console.log("MongoDB connected");
+      return true;
     })
     .catch((err) => {
       mongoConnected = false;
       console.error("MongoDB Connection Error:", formatMongoError(err));
+      return false;
+    })
+    .finally(() => {
+      mongoConnectPromise = null;
     });
+
+  return mongoConnectPromise;
+};
+
+if (!mongoUri) {
+  console.warn("Warning: MONGODB_URI or MONGO_URI is missing. Running in fallback mode.");
+} else {
+  void ensureMongoConnection();
 }
 
 // ==================== AUTH ROUTES ====================
@@ -117,7 +143,7 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(500).json({ error: "Server configuration error" });
     }
 
-    if (!isDatabaseReady()) {
+    if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database is not connected. Please try again." });
     }
 
@@ -172,7 +198,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(500).json({ error: "Server configuration error" });
     }
 
-    if (!isDatabaseReady()) {
+    if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database is not connected. Please try again." });
     }
 
@@ -210,8 +236,8 @@ app.get("/api/questions/:quizName", async (req, res) => {
   try {
     const requestedLevel = parseInt(req.query.level, 10) || 1;
 
-    // If MongoDB is connected, fetch from database
-    if (mongoConnected) {
+    // Try database first; fallback to in-memory if not available
+    if (await ensureMongoConnection()) {
       const questions = await Question.find({ quiz: req.params.quizName, level: requestedLevel });
       if (questions && questions.length > 0) {
         return res.json(questions);
@@ -241,10 +267,11 @@ app.post("/api/questions", authMiddleware, async (req, res) => {
       return res.status(400).json({ error: "All fields are required" });
     }
 
-    if (mongoConnected) {
-      const newQuestion = new Question({ quiz, question, options, answer, level: level || 1 });
-      await newQuestion.save();
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database is not connected. Cannot add question." });
     }
+    const newQuestion = new Question({ quiz, question, options, answer, level: level || 1 });
+    await newQuestion.save();
 
     // Also update in-memory data so it's available immediately/in fallback mode
     questionsData.push({ quiz, question, options, answer, level: level || 1 });
@@ -260,11 +287,11 @@ app.post("/api/questions", authMiddleware, async (req, res) => {
 app.post("/api/results", authMiddleware, async (req, res) => {
   try {
     const { score, quiz, level } = req.body;
-    const user = await User.findById(req.userId);
 
-    if (!mongoConnected) {
+    if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database not available. Cannot save result." });
     }
+    const user = await User.findById(req.userId);
 
     if (!user) {
       return res.status(404).json({ error: "User not found" });
@@ -285,7 +312,7 @@ app.post("/api/results", authMiddleware, async (req, res) => {
 
 app.get("/api/user/progress", authMiddleware, async (req, res) => {
   try {
-    if (!mongoConnected) {
+    if (!(await ensureMongoConnection())) {
       return res.json({});
     }
 
@@ -313,7 +340,7 @@ app.get("/api/user/progress", authMiddleware, async (req, res) => {
 
 app.get("/api/leaderboard", async (req, res) => {
   try {
-    if (!mongoConnected) {
+    if (!(await ensureMongoConnection())) {
       // Return an empty array if the database is not connected
       return res.json([]);
     }
