@@ -65,6 +65,7 @@ const loadFallbackQuestions = () => {
 
 let questionsData = loadFallbackQuestions();
 let mongoConnected = false;
+const isDatabaseReady = () => mongoConnected && mongoose.connection.readyState === 1;
 
 const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const mongoUri = normalizeMongoUri(rawMongoUri);
@@ -95,9 +96,12 @@ if (!mongoUri) {
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, confirmPassword } = req.body;
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
 
     // Validation
-    if (!name || !email || !password) {
+    if (!name || !normalizedEmail || !password) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
@@ -109,14 +113,22 @@ app.post("/api/auth/register", async (req, res) => {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
+    if (!isDatabaseReady()) {
+      return res.status(503).json({ error: "Database is not connected. Please try again." });
+    }
+
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({ error: "Email already registered" });
     }
 
     // Create new user
-    const newUser = new User({ name, email, password });
+    const newUser = new User({ name, email: normalizedEmail, password });
     await newUser.save();
 
     // Generate token
@@ -131,6 +143,15 @@ app.post("/api/auth/register", async (req, res) => {
     });
   } catch (err) {
     console.error("Registration error:", err);
+    if (err && err.code === 11000) {
+      return res.status(400).json({ error: "Email already registered" });
+    }
+    if (err && err.name === "ValidationError") {
+      return res.status(400).json({ error: "Invalid registration data" });
+    }
+    if (err && /buffering timed out|server selection timed out|ECONN|ENOTFOUND/i.test(err.message)) {
+      return res.status(503).json({ error: "Database is not connected. Please try again." });
+    }
     res.status(500).json({ error: "Registration failed" });
   }
 });
@@ -139,12 +160,23 @@ app.post("/api/auth/register", async (req, res) => {
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || "")
+      .trim()
+      .toLowerCase();
 
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       return res.status(400).json({ error: "Email and password are required" });
     }
 
-    const user = await User.findOne({ email });
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
+    if (!isDatabaseReady()) {
+      return res.status(503).json({ error: "Database is not connected. Please try again." });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(401).json({ error: "Invalid email or password" });
     }
@@ -166,6 +198,9 @@ app.post("/api/auth/login", async (req, res) => {
     });
   } catch (err) {
     console.error("Login error:", err);
+    if (err && /buffering timed out|server selection timed out|ECONN|ENOTFOUND/i.test(err.message)) {
+      return res.status(503).json({ error: "Database is not connected. Please try again." });
+    }
     res.status(500).json({ error: "Login failed" });
   }
 });
