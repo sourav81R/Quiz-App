@@ -1,0 +1,37 @@
+[
+  {
+    "quiz": "General Knowledge",
+    "question": "Which planet is known as the 'Red Planet'?",
+    "options": ["Venus", "Mars", "Jupiter", "Saturn"],
+    "answer": "Mars",
+    "level": 1
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the capital city of Japan?",
+    "options": ["Beijing", "Tokyo", "Seoul", "Bangkok"],
+    "answer": "Tokyo",
+    "level": 1
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is 12 × 8?",
+    "options": ["96", "108", "84", "88"],
+    "answer": "96",
+    "level": 1
+  },
+  {
+    "quiz": "Politics",
+    "question": "Who was the first Prime Minister of India?",
+    "options": ["Jawaharlal Nehru", "Mahatma Gandhi", "Sardar Patel", "Rajendra Prasad"],
+    "answer": "Jawaharlal Nehru",
+    "level": 1
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the largest mammal in the world?",
+    "options": ["African Elephant", "Blue Whale", "Polar Bear", "Giraffe"],
+    "answer": "Blue Whale",
+    "level": 1
+  }
+]

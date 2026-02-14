@@ -3,13 +3,26 @@
 require("dotenv").config();
 
 const mongoose = require("mongoose");
+const { normalizeMongoUri, maskMongoUri, formatMongoError } = require("./mongoUri");
 
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
-  .then(() => console.log("✅ MongoDB connected for seeding"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
+const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+const mongoUri = normalizeMongoUri(rawMongoUri);
+
+if (!mongoUri) {
+  console.error("Missing MONGODB_URI or MONGO_URI in .env");
+  process.exit(1);
+}
+
+console.log(`Seeding with MongoDB: ${maskMongoUri(mongoUri)}`);
+mongoose
+  .connect(mongoUri, {
+    connectTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 30000,
+    socketTimeoutMS: 45000,
+    family: 4,
+  })
+  .then(() => console.log("MongoDB connected for seeding"))
+  .catch((err) => console.error("MongoDB connection error:", formatMongoError(err)));
 
 const questionSchema = new mongoose.Schema({
   quiz: String,
@@ -644,3 +657,4 @@ async function seedData() {
 }
 
 seedData();
+

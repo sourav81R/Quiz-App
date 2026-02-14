@@ -826,7 +826,10 @@ async function submitNewQuestion() {
   try {
     const res = await fetch("/api/questions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { 
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`
+      },
       body: JSON.stringify({ quiz, question, options, answer, level })
     });
 
