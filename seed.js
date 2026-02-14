@@ -1,9 +1,10 @@
 // ===== seed.js =====
 
-require("dotenv").config();
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+import { normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
 
-const mongoose = require("mongoose");
-const { normalizeMongoUri, maskMongoUri, formatMongoError } = require("./mongoUri");
+dotenv.config();
 
 const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const mongoUri = normalizeMongoUri(rawMongoUri);

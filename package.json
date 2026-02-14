@@ -1,6 +1,7 @@
 {
   "name": "quiz-app",
   "version": "1.0.0",
+  "type": "module",
   "description": "Simple online quiz app (HTML/CSS/JS + Node/Express + MongoDB)",
   "main": "server.js",
   "scripts": {

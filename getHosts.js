@@ -1,8 +1,10 @@
-const dns = require("dns").promises;
+import dns from "dns";
+
+const { promises: dnsPromises } = dns;
 
 async function run() {
   try {
-    const records = await dns.resolveSrv("_mongodb._tcp.cluster0.2owaxaf.mongodb.net");
+    const records = await dnsPromises.resolveSrv("_mongodb._tcp.cluster0.2owaxaf.mongodb.net");
     console.log("FOUND HOSTS:");
     records.forEach(r => {
       console.log(`${r.name}:${r.port}`);

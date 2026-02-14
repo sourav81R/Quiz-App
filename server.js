@@ -1,15 +1,20 @@
-require("dotenv").config();
+import dotenv from "dotenv";
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import fs from "fs";
+import path from "path";
+import jwt from "jsonwebtoken";
+import { fileURLToPath } from "url";
+import { normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
+import User from "./models/User.js";
+import Question from "./models/Question.js";
+import Result from "./models/Result.js";
 
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const fs = require("fs");
-const path = require("path");
-const jwt = require("jsonwebtoken");
-const { normalizeMongoUri, maskMongoUri, formatMongoError } = require("./mongoUri");
-const User = require("./models/User");
-const Question = require("./models/Question");
-const Result = require("./models/Result");
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 

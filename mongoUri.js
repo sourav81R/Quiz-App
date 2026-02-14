@@ -73,8 +73,4 @@ function formatMongoError(err) {
   return `${err.message || "MongoDB connection failed"} | ${details.join(" | ")}`;
 }
 
-module.exports = {
-  normalizeMongoUri,
-  maskMongoUri,
-  formatMongoError,
-};
+export { normalizeMongoUri, maskMongoUri, formatMongoError };

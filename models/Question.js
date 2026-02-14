@@ -1,4 +1,4 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
 const QuestionSchema = new mongoose.Schema({
   quiz: { type: String, required: true }, // Quiz category (General Knowledge, Mathematics, etc.)
@@ -9,4 +9,6 @@ const QuestionSchema = new mongoose.Schema({
   level: { type: Number, default: 1 }
 });
 
-module.exports = mongoose.model("Question", QuestionSchema);
+const Question = mongoose.model("Question", QuestionSchema);
+
+export default Question;
