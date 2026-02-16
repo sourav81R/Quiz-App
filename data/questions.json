@@ -1,0 +1,282 @@
+[
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the capital of Australia?",
+    "options": ["Sydney", "Melbourne", "Canberra", "Perth"],
+    "answer": "Canberra",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "Which element has the chemical symbol 'Au'?",
+    "options": ["Silver", "Gold", "Copper", "Iron"],
+    "answer": "Gold",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "Which country has the most natural lakes?",
+    "options": ["USA", "Canada", "Russia", "Brazil"],
+    "answer": "Canada",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the currency of Japan?",
+    "options": ["Yuan", "Yen", "Won", "Ringgit"],
+    "answer": "Yen",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "Who painted the Mona Lisa?",
+    "options": ["Vincent van Gogh", "Pablo Picasso", "Leonardo da Vinci", "Claude Monet"],
+    "answer": "Leonardo da Vinci",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the smallest planet in our solar system?",
+    "options": ["Mars", "Mercury", "Venus", "Pluto"],
+    "answer": "Mercury",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "Which ocean is the deepest?",
+    "options": ["Atlantic", "Indian", "Arctic", "Pacific"],
+    "answer": "Pacific",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the longest river in the world?",
+    "options": ["Amazon", "Nile", "Yangtze", "Mississippi"],
+    "answer": "Nile",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "Who discovered penicillin?",
+    "options": ["Marie Curie", "Alexander Fleming", "Isaac Newton", "Albert Einstein"],
+    "answer": "Alexander Fleming",
+    "level": 2
+  },
+  {
+    "quiz": "General Knowledge",
+    "question": "What is the capital of Canada?",
+    "options": ["Toronto", "Vancouver", "Ottawa", "Montreal"],
+    "answer": "Ottawa",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is the square root of 225?",
+    "options": ["13", "14", "15", "16"],
+    "answer": "15",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "Solve for x: 3x - 7 = 20",
+    "options": ["7", "8", "9", "10"],
+    "answer": "9",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is 7 cubed (7^3)?",
+    "options": ["49", "243", "343", "512"],
+    "answer": "343",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is the value of 5 factorial (5!)?",
+    "options": ["60", "100", "120", "150"],
+    "answer": "120",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is the area of a triangle with base 10 and height 5?",
+    "options": ["25", "50", "15", "100"],
+    "answer": "25",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is 15% of 200?",
+    "options": ["20", "25", "30", "35"],
+    "answer": "30",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "How many degrees are in a right angle?",
+    "options": ["45", "90", "180", "360"],
+    "answer": "90",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "Solve: 2 + 2 * 2",
+    "options": ["8", "6", "4", "10"],
+    "answer": "6",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "What is the next prime number after 7?",
+    "options": ["8", "9", "10", "11"],
+    "answer": "11",
+    "level": 2
+  },
+  {
+    "quiz": "Mathematics",
+    "question": "How many seconds are in an hour?",
+    "options": ["60", "360", "3600", "600"],
+    "answer": "3600",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Who is the current Secretary-General of the United Nations?",
+    "options": ["Ban Ki-moon", "Kofi Annan", "Antonio Guterres", "Donald Trump"],
+    "answer": "Antonio Guterres",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Which country has the longest written constitution in the world?",
+    "options": ["USA", "India", "UK", "France"],
+    "answer": "India",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Who is the current President of France?",
+    "options": ["Nicolas Sarkozy", "Francois Hollande", "Emmanuel Macron", "Marine Le Pen"],
+    "answer": "Emmanuel Macron",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "What is the lower house of the US Congress?",
+    "options": ["Senate", "House of Representatives", "Parliament", "Duma"],
+    "answer": "House of Representatives",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "In which city is the European Parliament primarily located?",
+    "options": ["Brussels", "Berlin", "Strasbourg", "Paris"],
+    "answer": "Strasbourg",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Who was the first female Prime Minister of the United Kingdom?",
+    "options": ["Theresa May", "Margaret Thatcher", "Angela Merkel", "Indira Gandhi"],
+    "answer": "Margaret Thatcher",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "What is the standard voting age in most democratic countries?",
+    "options": ["16", "18", "21", "25"],
+    "answer": "18",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Which ideology advocates for common ownership of the means of production?",
+    "options": ["Capitalism", "Communism", "Liberalism", "Fascism"],
+    "answer": "Communism",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "Who is the current Chancellor of Germany?",
+    "options": ["Angela Merkel", "Olaf Scholz", "Gerhard Schroder", "Helmut Kohl"],
+    "answer": "Olaf Scholz",
+    "level": 2
+  },
+  {
+    "quiz": "Politics",
+    "question": "What is the term length for a US Senator?",
+    "options": ["2 years", "4 years", "6 years", "8 years"],
+    "answer": "6 years",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the hardest natural substance on Earth?",
+    "options": ["Gold", "Iron", "Diamond", "Quartz"],
+    "answer": "Diamond",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "Which planet has the most moons?",
+    "options": ["Mars", "Jupiter", "Saturn", "Neptune"],
+    "answer": "Saturn",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the largest desert in the world?",
+    "options": ["Sahara", "Gobi", "Antarctic", "Arabian"],
+    "answer": "Antarctic",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the main gas in Earth's atmosphere?",
+    "options": ["Oxygen", "Carbon Dioxide", "Nitrogen", "Argon"],
+    "answer": "Nitrogen",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "Which animal is known as the 'King of the Jungle'?",
+    "options": ["Tiger", "Elephant", "Lion", "Gorilla"],
+    "answer": "Lion",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the process of water turning into vapor?",
+    "options": ["Condensation", "Evaporation", "Precipitation", "Sublimation"],
+    "answer": "Evaporation",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "How many hearts does an octopus have?",
+    "options": ["1", "2", "3", "4"],
+    "answer": "3",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the tallest grass in the world?",
+    "options": ["Wheat", "Bamboo", "Sugarcane", "Kentucky Bluegrass"],
+    "answer": "Bamboo",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "Which bird cannot fly but is a great swimmer?",
+    "options": ["Ostrich", "Emu", "Penguin", "Kiwi"],
+    "answer": "Penguin",
+    "level": 2
+  },
+  {
+    "quiz": "Nature",
+    "question": "What is the largest reef system in the world?",
+    "options": ["Belize Barrier Reef", "Great Barrier Reef", "Red Sea Coral Reef", "Pulley Ridge"],
+    "answer": "Great Barrier Reef",
+    "level": 2
+  }
+]
