@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const ResultSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  authUid: { type: String },
+  authEmail: { type: String },
   username: String,
   score: Number,
   quiz: String,

@@ -27,6 +27,81 @@ let timeLeft = 10;
 // ================== MUTE STATE ==================
 let isMuted = localStorage.getItem("quizMuted") === "true";
 
+function getFirebaseAuthInstance() {
+  if (window.firebaseAuth) {
+    return window.firebaseAuth;
+  }
+  return null;
+}
+
+async function waitForFirebaseAuth() {
+  if (window.firebaseAuth) {
+    return window.firebaseAuth;
+  }
+
+  if (window.firebaseReadyPromise && typeof window.firebaseReadyPromise.then === "function") {
+    try {
+      await window.firebaseReadyPromise;
+    } catch (err) {
+      // firebase-config.js already logs the root cause
+    }
+  }
+
+  return window.firebaseAuth || null;
+}
+
+function mapFirebaseAuthError(err) {
+  const code = String(err?.code || "");
+  if (code.includes("email-already-in-use")) return "This email is already registered.";
+  if (code.includes("invalid-email")) return "Please enter a valid email address.";
+  if (code.includes("weak-password")) return "Password must be at least 6 characters.";
+  if (code.includes("too-many-requests")) return "Too many attempts. Please try again later.";
+  if (code.includes("popup-closed-by-user")) return "Google sign-in was cancelled.";
+  if (code.includes("popup-blocked")) return "Popup was blocked. Please allow popups and try again.";
+  if (code.includes("operation-not-allowed")) return "Google sign-in is not enabled in Firebase Authentication.";
+  if (code.includes("unauthorized-domain")) return "This domain is not authorized in Firebase Authentication settings.";
+  if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
+    return "Invalid email or password.";
+  }
+  return err?.message || "Authentication failed. Please try again.";
+}
+
+function createGoogleProvider() {
+  if (!window.firebase?.auth) {
+    return null;
+  }
+  const provider = new window.firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return provider;
+}
+
+async function exchangeFirebaseSession(firebaseUser, fallbackName = "") {
+  const idToken = await firebaseUser.getIdToken();
+  const res = await fetch("/api/auth/firebase", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      idToken,
+      name: String(firebaseUser.displayName || fallbackName || "").trim(),
+    }),
+  });
+
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (err) {
+    data = {};
+  }
+  if (!res.ok) {
+    throw new Error(data.error || `Firebase login failed (${res.status})`);
+  }
+
+  localStorage.setItem("authToken", data.token);
+  localStorage.setItem("currentUser", JSON.stringify(data.user));
+  authToken = data.token;
+  currentUser = data.user;
+}
+
 // ================== AUTH FUNCTIONS ==================
 async function handleRegister() {
   const name = document.getElementById("register-name").value.trim();
@@ -39,25 +114,23 @@ async function handleRegister() {
     return;
   }
 
+  if (password !== confirmPassword) {
+    showAuthMessage("Passwords do not match", "error");
+    return;
+  }
+
   try {
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, confirmPassword })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      showAuthMessage(data.error || "Registration failed", "error");
+    const firebaseAuth = await waitForFirebaseAuth();
+    if (!firebaseAuth) {
+      showAuthMessage("Firebase auth is not configured in frontend.", "error");
       return;
     }
 
-    // Save token and user
-    localStorage.setItem("authToken", data.token);
-    localStorage.setItem("currentUser", JSON.stringify(data.user));
-    authToken = data.token;
-    currentUser = data.user;
+    const userCredential = await firebaseAuth.createUserWithEmailAndPassword(email, password);
+    if (name && userCredential?.user) {
+      await userCredential.user.updateProfile({ displayName: name });
+    }
+    await exchangeFirebaseSession(userCredential.user, name);
 
     showAuthMessage("Registration successful! Welcome!", "success");
     setTimeout(() => {
@@ -66,7 +139,7 @@ async function handleRegister() {
     }, 1500);
   } catch (err) {
     console.error("Registration error:", err);
-    showAuthMessage("Registration failed. Please try again.", "error");
+    showAuthMessage(mapFirebaseAuthError(err), "error");
   }
 }
 
@@ -80,24 +153,14 @@ async function handleLogin() {
   }
 
   try {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      showAuthMessage(data.error || "Login failed", "error");
+    const firebaseAuth = await waitForFirebaseAuth();
+    if (!firebaseAuth) {
+      showAuthMessage("Firebase auth is not configured in frontend.", "error");
       return;
     }
 
-    // Save token and user
-    localStorage.setItem("authToken", data.token);
-    localStorage.setItem("currentUser", JSON.stringify(data.user));
-    authToken = data.token;
-    currentUser = data.user;
+    const userCredential = await firebaseAuth.signInWithEmailAndPassword(email, password);
+    await exchangeFirebaseSession(userCredential.user);
 
     showAuthMessage("Login successful! Welcome back!", "success");
     setTimeout(() => {
@@ -106,12 +169,68 @@ async function handleLogin() {
     }, 1500);
   } catch (err) {
     console.error("Login error:", err);
-    showAuthMessage("Login failed. Please try again.", "error");
+    showAuthMessage(mapFirebaseAuthError(err), "error");
   }
 }
 
-function handleLogout() {
+async function handleGoogleContinue() {
+  try {
+    const firebaseAuth = await waitForFirebaseAuth();
+    if (!firebaseAuth) {
+      showAuthMessage("Firebase auth is not configured in frontend.", "error");
+      return;
+    }
+
+    const provider = createGoogleProvider();
+    if (!provider) {
+      showAuthMessage("Google provider is unavailable.", "error");
+      return;
+    }
+
+    const userCredential = await firebaseAuth.signInWithPopup(provider);
+    await exchangeFirebaseSession(userCredential.user);
+
+    showAuthMessage("Google sign-in successful! Welcome!", "success");
+    setTimeout(() => {
+      document.getElementById("login-screen").style.display = "none";
+      renderStartScreen();
+    }, 1200);
+  } catch (err) {
+    const errorCode = String(err?.code || "");
+    const firebaseAuth = getFirebaseAuthInstance();
+    const provider = createGoogleProvider();
+
+    if (
+      firebaseAuth &&
+      provider &&
+      (errorCode.includes("popup-blocked") || errorCode.includes("operation-not-supported-in-this-environment"))
+    ) {
+      try {
+        await firebaseAuth.signInWithRedirect(provider);
+        return;
+      } catch (redirectErr) {
+        console.error("Google redirect sign-in error:", redirectErr);
+        showAuthMessage(mapFirebaseAuthError(redirectErr), "error");
+        return;
+      }
+    }
+
+    console.error("Google sign-in error:", err);
+    showAuthMessage(mapFirebaseAuthError(err), "error");
+  }
+}
+
+async function handleLogout() {
   if (confirm("Are you sure you want to logout?")) {
+    try {
+      const firebaseAuth = await waitForFirebaseAuth();
+      if (firebaseAuth && firebaseAuth.currentUser) {
+        await firebaseAuth.signOut();
+      }
+    } catch (err) {
+      console.error("Firebase logout error:", err);
+    }
+
     localStorage.removeItem("authToken");
     localStorage.removeItem("currentUser");
     authToken = null;
@@ -144,6 +263,11 @@ function handleLogout() {
 }
 
 function handleUnauthorizedSession(message = "Session expired. Please login again.") {
+  const firebaseAuth = getFirebaseAuthInstance();
+  if (firebaseAuth && firebaseAuth.currentUser) {
+    firebaseAuth.signOut().catch((err) => console.error("Firebase signout on session expiry failed:", err));
+  }
+
   localStorage.removeItem("authToken");
   localStorage.removeItem("currentUser");
   authToken = null;
@@ -161,6 +285,7 @@ function handleUnauthorizedSession(message = "Session expired. Please login agai
   if (startScreen) startScreen.style.display = "none";
   if (quizContainer) quizContainer.style.display = "none";
   if (resultScreen) resultScreen.style.display = "none";
+  showLogin();
 
   showAuthMessage(message, "error");
 }
@@ -187,14 +312,63 @@ function showAuthMessage(message, type) {
 }
 
 // Check if user is logged in on page load
-window.addEventListener("DOMContentLoaded", () => {
-  if (authToken && currentUser) {
+window.addEventListener("DOMContentLoaded", async () => {
+  const goToStartScreen = async () => {
     document.getElementById("login-screen").style.display = "none";
-    renderStartScreen();
-  } else {
-    document.getElementById("login-screen").style.display = "block";
-    document.getElementById("start-screen").style.display = "none";
+    await renderStartScreen();
+    initMuteButton();
+  };
+
+  if (authToken && currentUser) {
+    await goToStartScreen();
+    return;
   }
+
+  const firebaseAuth = await waitForFirebaseAuth();
+  if (firebaseAuth) {
+    try {
+      const redirectResult = await firebaseAuth.getRedirectResult();
+      if (redirectResult?.user) {
+        await exchangeFirebaseSession(redirectResult.user);
+        await goToStartScreen();
+        return;
+      }
+    } catch (err) {
+      console.error("Google redirect callback error:", err);
+      showAuthMessage(mapFirebaseAuthError(err), "error");
+    }
+  }
+
+  if (firebaseAuth?.currentUser) {
+    try {
+      await exchangeFirebaseSession(firebaseAuth.currentUser);
+      await goToStartScreen();
+      return;
+    } catch (err) {
+      console.error("Auto-login from Firebase session failed:", err);
+    }
+  }
+
+  if (firebaseAuth) {
+    firebaseAuth.onAuthStateChanged(async (user) => {
+      if (!user) {
+        return;
+      }
+      if (authToken && currentUser) {
+        return;
+      }
+      try {
+        await exchangeFirebaseSession(user);
+        await goToStartScreen();
+      } catch (err) {
+        console.error("Auth state session exchange failed:", err);
+      }
+    });
+  }
+
+  document.getElementById("login-screen").style.display = "block";
+  document.getElementById("start-screen").style.display = "none";
+  showLogin();
   initMuteButton();
 });
 
@@ -472,7 +646,12 @@ function finishQuiz() {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${authToken}`
       },
-      body: JSON.stringify({ score: score, quiz: currentQuiz, level: currentLevel })
+      body: JSON.stringify({
+        score: score,
+        quiz: currentQuiz,
+        level: currentLevel,
+        username: currentUser?.name || "",
+      })
     })
       .then((res) => {
         if (res.status === 401) {
@@ -972,7 +1151,11 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
                   entry &&
                   entry._id &&
                   ((entry.userId && String(entry.userId) === String(currentUser.id)) ||
-                    (!entry.userId && entry.username === currentUser.name));
+                    (entry.authUid && String(entry.authUid) === String(currentUser.id)) ||
+                    (entry.authEmail &&
+                      currentUser.email &&
+                      String(entry.authEmail).toLowerCase() === String(currentUser.email).toLowerCase()) ||
+                    (!entry.userId && !entry.authUid && !entry.authEmail && entry.username === currentUser.name));
 
                 return `
                   <div class="leaderboard-item">

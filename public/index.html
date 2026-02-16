@@ -15,7 +15,7 @@
       <p class="subtitle">Test Your Knowledge</p>
       
       <!-- Login Form -->
-      <div id="login-form" class="auth-form" style="display: none;">
+      <div id="login-form" class="auth-form" style="display: block;">
         <h2>Login</h2>
         <div class="input-group">
           <label for="login-email">Email Address</label>
@@ -26,11 +26,18 @@
           <input type="password" id="login-password" placeholder="Enter your password" required="">
         </div>
         <button onclick="handleLogin()">Login</button>
+        <div class="auth-divider">
+          <span>or</span>
+        </div>
+        <button type="button" class="google-auth-btn" onclick="handleGoogleContinue()">
+          <span class="google-icon" aria-hidden="true">G</span>
+          Continue with Google
+        </button>
         <p class="form-switch">Don't have an account? <a onclick="showRegister()">Register</a></p>
       </div>
 
       <!-- Register Form (hidden by default) -->
-      <div id="register-form" class="auth-form" style="display: block;">
+      <div id="register-form" class="auth-form" style="display: none;">
         <h2>Create Account</h2>
         <div class="input-group">
           <label for="register-name">Full Name</label>
@@ -49,6 +56,13 @@
           <input type="password" id="register-confirm-password" placeholder="Confirm your password" required="">
         </div>
         <button onclick="handleRegister()">Register</button>
+        <div class="auth-divider">
+          <span>or</span>
+        </div>
+        <button type="button" class="google-auth-btn" onclick="handleGoogleContinue()">
+          <span class="google-icon" aria-hidden="true">G</span>
+          Continue with Google
+        </button>
         <p class="form-switch">Already have an account? <a onclick="showLogin()">Login</a></p>
       </div>
 
@@ -115,6 +129,9 @@
     <button id="restart-btn" type="button" onclick="restartQuiz()">🔄 Take Another Quiz</button>
   </div>
 
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.2/firebase-auth-compat.js"></script>
+  <script src="firebase-config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -5,6 +5,8 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import jwt from "jsonwebtoken";
+import { cert, getApps, initializeApp as initializeFirebaseAdminApp } from "firebase-admin/app";
+import { getAuth as getFirebaseAdminAuth } from "firebase-admin/auth";
 import { fileURLToPath } from "url";
 import { resolveMongoUri, normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
 import User from "./models/User.js";
@@ -25,9 +27,225 @@ app.use(express.json());
 // Serve frontend
 app.use(express.static(path.join(__dirname, "public")));
 
-// Authentication middleware
-const authMiddleware = (req, res, next) => {
-  const token = req.headers.authorization?.split(" ")[1];
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const getNameFromEmail = (email) => {
+  const normalized = normalizeEmail(email);
+  if (!normalized.includes("@")) {
+    return "User";
+  }
+  return normalized.split("@")[0] || "User";
+};
+
+const firebaseWebConfig = {
+  apiKey: String(process.env.FIREBASE_WEB_API_KEY || "").trim(),
+  authDomain: String(process.env.FIREBASE_WEB_AUTH_DOMAIN || "").trim(),
+  projectId: String(process.env.FIREBASE_WEB_PROJECT_ID || "").trim(),
+  storageBucket: String(process.env.FIREBASE_WEB_STORAGE_BUCKET || "").trim(),
+  messagingSenderId: String(process.env.FIREBASE_WEB_MESSAGING_SENDER_ID || "").trim(),
+  appId: String(process.env.FIREBASE_WEB_APP_ID || "").trim(),
+  measurementId: String(process.env.FIREBASE_WEB_MEASUREMENT_ID || "").trim(),
+};
+const firebaseWebConfigComplete =
+  Boolean(firebaseWebConfig.apiKey) &&
+  Boolean(firebaseWebConfig.authDomain) &&
+  Boolean(firebaseWebConfig.projectId) &&
+  Boolean(firebaseWebConfig.storageBucket) &&
+  Boolean(firebaseWebConfig.messagingSenderId) &&
+  Boolean(firebaseWebConfig.appId);
+if (!firebaseWebConfigComplete) {
+  console.warn("Firebase Web config not fully set. /api/config/firebase will return 503.");
+}
+
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+const firebaseClientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+const firebasePrivateKey = process.env.FIREBASE_PRIVATE_KEY
+  ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, "\n")
+  : "";
+const firebaseConfigComplete = Boolean(firebaseProjectId && firebaseClientEmail && firebasePrivateKey);
+
+let firebaseAdminAuth = null;
+if (firebaseConfigComplete) {
+  try {
+    const firebaseApp =
+      getApps()[0] ||
+      initializeFirebaseAdminApp({
+        credential: cert({
+          projectId: firebaseProjectId,
+          clientEmail: firebaseClientEmail,
+          privateKey: firebasePrivateKey,
+        }),
+      });
+    firebaseAdminAuth = getFirebaseAdminAuth(firebaseApp);
+    console.log("Firebase Admin initialized");
+  } catch (err) {
+    console.warn("Firebase Admin initialization failed:", err?.message || err);
+  }
+} else {
+  console.warn("Firebase Admin credentials not set. Using REST fallback for Firebase token verification.");
+}
+
+const createLocalJwt = (payload) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("Server configuration error");
+  }
+  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
+};
+
+const getBearerToken = (authorizationHeader = "") => {
+  const [scheme, token] = String(authorizationHeader).split(" ");
+  if (scheme?.toLowerCase() !== "bearer" || !token) {
+    return "";
+  }
+  return token.trim();
+};
+
+const setFirebaseRequestContext = (req, decoded) => {
+  req.authType = "firebase";
+  req.userId = String(decoded.uid || "");
+  req.authUid = String(decoded.uid || "");
+  req.authEmail = normalizeEmail(decoded.email);
+  req.authName = String(decoded.name || "").trim();
+};
+
+const setLocalRequestContext = (req, decoded) => {
+  if (decoded?.authType === "firebase" && decoded?.authUid) {
+    req.authType = "firebase";
+    req.userId = String(decoded.authUid);
+    req.authUid = String(decoded.authUid);
+    req.authEmail = normalizeEmail(decoded.authEmail);
+    req.authName = String(decoded.name || "").trim();
+    return;
+  }
+  req.authType = "local";
+  req.userId = decoded?.userId;
+  req.authUid = null;
+  req.authEmail = "";
+  req.authName = "";
+};
+
+const getQuestionOwnershipFilter = (req) => {
+  if (req.authType === "firebase" && req.authUid) {
+    const firebaseFilter = [{ authUid: req.authUid }];
+    if (req.authEmail) {
+      firebaseFilter.push({ authEmail: req.authEmail });
+    }
+    return { $or: firebaseFilter };
+  }
+  return { userId: req.userId };
+};
+
+const getQuestionOwnershipMatch = (question, req) => {
+  if (req.authType === "firebase" && req.authUid) {
+    return (
+      String(question.authUid || "") === String(req.authUid) ||
+      (req.authEmail && String(question.authEmail || "") === String(req.authEmail))
+    );
+  }
+  return String(question.userId || "") === String(req.userId);
+};
+
+const getResultOwnershipFilter = (req, fallbackUsername = "") => {
+  if (req.authType === "firebase" && req.authUid) {
+    const firebaseConditions = [{ authUid: req.authUid }];
+    if (req.authEmail) {
+      firebaseConditions.push({ authEmail: req.authEmail });
+    }
+    if (fallbackUsername) {
+      firebaseConditions.push({
+        userId: { $exists: false },
+        authUid: { $exists: false },
+        authEmail: { $exists: false },
+        username: fallbackUsername,
+      });
+      firebaseConditions.push({
+        userId: null,
+        authUid: null,
+        authEmail: null,
+        username: fallbackUsername,
+      });
+    }
+    return { $or: firebaseConditions };
+  }
+  return {
+    $or: [
+      { userId: req.userId },
+      { userId: { $exists: false }, username: fallbackUsername },
+      { userId: null, username: fallbackUsername },
+    ],
+  };
+};
+
+const verifyFirebaseTokenViaRest = async (idToken) => {
+  const webApiKey = String(firebaseWebConfig.apiKey || "").trim();
+  if (!webApiKey) {
+    const err = new Error("FIREBASE_WEB_API_KEY is missing");
+    err.code = "identitytoolkit/missing-api-key";
+    throw err;
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(webApiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    }
+  );
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (err) {
+    data = {};
+  }
+
+  if (!response.ok) {
+    const apiMessage = String(data?.error?.message || "").trim() || `HTTP_${response.status}`;
+    const err = new Error(apiMessage);
+    err.code = `identitytoolkit/${apiMessage}`;
+    throw err;
+  }
+
+  const user = Array.isArray(data?.users) ? data.users[0] : null;
+  const uid = String(user?.localId || "").trim();
+  if (!uid) {
+    const err = new Error("INVALID_ID_TOKEN");
+    err.code = "identitytoolkit/INVALID_ID_TOKEN";
+    throw err;
+  }
+
+  return {
+    uid,
+    email: normalizeEmail(user?.email),
+    name: String(user?.displayName || "").trim(),
+  };
+};
+
+const verifyFirebaseIdentity = async (idToken) => {
+  if (firebaseAdminAuth) {
+    const decoded = await firebaseAdminAuth.verifyIdToken(idToken);
+    return {
+      uid: String(decoded.uid || "").trim(),
+      email: normalizeEmail(decoded.email),
+      name: String(decoded.name || "").trim(),
+    };
+  }
+  return verifyFirebaseTokenViaRest(idToken);
+};
+
+app.get("/api/config/firebase", (req, res) => {
+  if (!firebaseWebConfigComplete) {
+    return res.status(503).json({
+      error:
+        "Firebase web config missing. Set FIREBASE_WEB_API_KEY, FIREBASE_WEB_AUTH_DOMAIN, FIREBASE_WEB_PROJECT_ID, FIREBASE_WEB_STORAGE_BUCKET, FIREBASE_WEB_MESSAGING_SENDER_ID and FIREBASE_WEB_APP_ID.",
+    });
+  }
+
+  return res.json(firebaseWebConfig);
+});
+
+const authMiddleware = async (req, res, next) => {
+  const token = getBearerToken(req.headers.authorization);
 
   if (!token) {
     return res.status(401).json({ error: "No token provided" });
@@ -35,10 +253,16 @@ const authMiddleware = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.userId = decoded.userId;
+    setLocalRequestContext(req, decoded);
     next();
   } catch (err) {
-    res.status(401).json({ error: "Invalid token" });
+    try {
+      const firebaseDecoded = await verifyFirebaseIdentity(token);
+      setFirebaseRequestContext(req, firebaseDecoded);
+      next();
+    } catch (firebaseError) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
   }
 };
 
@@ -291,10 +515,7 @@ app.post("/api/auth/register", async (req, res) => {
     const newUser = new User({ name, email: normalizedEmail, password });
     await newUser.save();
 
-    // Generate token
-    const token = jwt.sign({ userId: newUser._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = createLocalJwt({ userId: String(newUser._id), authType: "local" });
 
     res.json({
       message: "Registration successful",
@@ -346,10 +567,7 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(401).json({ error: "Invalid email or password" });
     }
 
-    // Generate token
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = createLocalJwt({ userId: String(user._id), authType: "local" });
 
     res.json({
       message: "Login successful",
@@ -365,6 +583,68 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
+app.post("/api/auth/firebase", async (req, res) => {
+  try {
+    const { idToken, name } = req.body || {};
+    const trimmedToken = String(idToken || "").trim();
+    const providedName = String(name || "").trim();
+
+    if (!trimmedToken) {
+      return res.status(400).json({ error: "Firebase idToken is required" });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
+    const decoded = await verifyFirebaseIdentity(trimmedToken);
+    const normalizedEmail = normalizeEmail(decoded.email);
+    const resolvedName =
+      String(decoded.name || "").trim() || providedName || getNameFromEmail(normalizedEmail);
+    const uid = String(decoded.uid || "").trim();
+
+    if (!uid) {
+      return res.status(400).json({ error: "Invalid Firebase token" });
+    }
+
+    const token = createLocalJwt({
+      authType: "firebase",
+      authUid: uid,
+      authEmail: normalizedEmail,
+      name: resolvedName,
+    });
+
+    res.json({
+      message: "Firebase login successful",
+      token,
+      user: {
+        id: uid,
+        name: resolvedName,
+        email: normalizedEmail,
+        provider: "firebase",
+      },
+    });
+  } catch (err) {
+    console.error("Firebase auth error:", err);
+    const errorCode = String(err?.code || "");
+    if (errorCode === "auth/id-token-expired") {
+      return res.status(401).json({ error: "Firebase token expired. Please login again." });
+    }
+    if (
+      errorCode === "auth/argument-error" ||
+      errorCode === "auth/invalid-id-token" ||
+      errorCode.includes("INVALID_ID_TOKEN") ||
+      errorCode.includes("TOKEN_EXPIRED")
+    ) {
+      return res.status(401).json({ error: "Invalid Firebase token" });
+    }
+    if (errorCode.includes("missing-api-key")) {
+      return res.status(503).json({ error: "Firebase web API key missing on server configuration." });
+    }
+    return res.status(500).json({ error: "Firebase authentication failed" });
+  }
+});
+
 // ==================== QUIZ ROUTES ====================
 app.get("/api/questions", authMiddleware, async (req, res) => {
   try {
@@ -372,7 +652,7 @@ app.get("/api/questions", authMiddleware, async (req, res) => {
       return res.status(503).json({ error: "Database is not connected. Cannot fetch your questions." });
     }
 
-    const userQuestions = await Question.find({ userId: req.userId }).sort({ _id: -1 });
+    const userQuestions = await Question.find(getQuestionOwnershipFilter(req)).sort({ _id: -1 });
     res.json(userQuestions);
   } catch (err) {
     console.error("Error fetching user questions:", err);
@@ -433,8 +713,19 @@ app.post("/api/questions", authMiddleware, async (req, res) => {
     if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database is not connected. Cannot add question." });
     }
+
+    const questionOwnerFields =
+      req.authType === "firebase"
+        ? {
+            authUid: req.authUid,
+            authEmail: req.authEmail || undefined,
+          }
+        : {
+            userId: req.userId,
+          };
+
     const newQuestion = new Question({
-      userId: req.userId,
+      ...questionOwnerFields,
       quiz: normalizedPayload.quiz,
       question: normalizedPayload.question,
       options: normalizedPayload.options,
@@ -446,7 +737,9 @@ app.post("/api/questions", authMiddleware, async (req, res) => {
     // Also update in-memory data so it's available immediately/in fallback mode
     questionsData.push({
       _id: String(newQuestion._id),
-      userId: req.userId,
+      userId: req.authType === "local" ? req.userId : undefined,
+      authUid: req.authType === "firebase" ? req.authUid : undefined,
+      authEmail: req.authType === "firebase" ? req.authEmail : undefined,
       quiz: normalizedPayload.quiz,
       question: normalizedPayload.question,
       options: normalizedPayload.options,
@@ -482,7 +775,7 @@ app.put("/api/questions/:questionId", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    if (String(questionToUpdate.userId || "") !== String(req.userId)) {
+    if (!getQuestionOwnershipMatch(questionToUpdate, req)) {
       return res.status(403).json({ error: "You can only edit your own questions" });
     }
 
@@ -528,7 +821,7 @@ app.delete("/api/questions/:questionId", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Question not found" });
     }
 
-    if (String(questionToDelete.userId || "") !== String(req.userId)) {
+    if (!getQuestionOwnershipMatch(questionToDelete, req)) {
       return res.status(403).json({ error: "You can only delete your own questions" });
     }
 
@@ -548,20 +841,37 @@ app.delete("/api/questions/:questionId", authMiddleware, async (req, res) => {
 // ==================== LEADERBOARD ROUTES ====================
 app.post("/api/results", authMiddleware, async (req, res) => {
   try {
-    const { score, quiz, level } = req.body;
+    const { score, quiz, level, username } = req.body;
 
     if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database not available. Cannot save result." });
     }
-    const user = await User.findById(req.userId);
 
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    let resolvedUsername = "";
+    if (req.authType === "firebase" && req.authUid) {
+      resolvedUsername =
+        String(username || "").trim() || req.authName || getNameFromEmail(req.authEmail);
+    } else {
+      const user = await User.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      resolvedUsername = user.name;
     }
 
+    const resultOwnerFields =
+      req.authType === "firebase" && req.authUid
+        ? {
+            authUid: req.authUid,
+            authEmail: req.authEmail || undefined,
+          }
+        : {
+            userId: req.userId,
+          };
+
     const newResult = new Result({
-      userId: req.userId,
-      username: user.name,
+      ...resultOwnerFields,
+      username: resolvedUsername,
       score,
       quiz,
       level: level || 1,
@@ -579,9 +889,15 @@ app.delete("/api/results/:resultId", authMiddleware, async (req, res) => {
       return res.status(503).json({ error: "Database not available. Cannot delete result." });
     }
 
-    const user = await User.findById(req.userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    let fallbackUsername = "";
+    if (req.authType === "firebase" && req.authUid) {
+      fallbackUsername = req.authName || getNameFromEmail(req.authEmail);
+    } else {
+      const user = await User.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      fallbackUsername = user.name;
     }
 
     const result = await Result.findById(req.params.resultId);
@@ -589,9 +905,17 @@ app.delete("/api/results/:resultId", authMiddleware, async (req, res) => {
       return res.status(404).json({ error: "Result not found" });
     }
 
-    const belongsToUser =
-      (result.userId && String(result.userId) === String(req.userId)) ||
-      (!result.userId && result.username === user.name);
+    let belongsToUser = false;
+    if (req.authType === "firebase" && req.authUid) {
+      belongsToUser =
+        (result.authUid && String(result.authUid) === String(req.authUid)) ||
+        (req.authEmail && result.authEmail && String(result.authEmail) === String(req.authEmail)) ||
+        (!result.userId && !result.authUid && !result.authEmail && result.username === fallbackUsername);
+    } else {
+      belongsToUser =
+        (result.userId && String(result.userId) === String(req.userId)) ||
+        (!result.userId && result.username === fallbackUsername);
+    }
 
     if (!belongsToUser) {
       return res.status(403).json({ error: "You can only delete your own result" });
@@ -613,18 +937,18 @@ app.delete("/api/results", authMiddleware, async (req, res) => {
       return res.status(503).json({ error: "Database not available. Cannot clear history." });
     }
 
-    const user = await User.findById(req.userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    let fallbackUsername = "";
+    if (req.authType === "firebase" && req.authUid) {
+      fallbackUsername = req.authName || getNameFromEmail(req.authEmail);
+    } else {
+      const user = await User.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      fallbackUsername = user.name;
     }
 
-    const ownershipFilter = {
-      $or: [
-        { userId: req.userId },
-        { userId: { $exists: false }, username: user.name },
-        { userId: null, username: user.name },
-      ],
-    };
+    const ownershipFilter = getResultOwnershipFilter(req, fallbackUsername);
 
     if (req.query.quiz) {
       ownershipFilter.quiz = String(req.query.quiz).trim();
@@ -646,19 +970,21 @@ app.get("/api/user/progress", authMiddleware, async (req, res) => {
       return res.json({});
     }
 
-    const user = await User.findById(req.userId);
-    if (!user) {
-      return res.status(404).json({ error: "User not found" });
+    let fallbackUsername = "";
+    if (req.authType === "firebase" && req.authUid) {
+      fallbackUsername = req.authName || getNameFromEmail(req.authEmail);
+    } else {
+      const user = await User.findById(req.userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      fallbackUsername = user.name;
     }
 
     // Find max level reached for each quiz where score was 8 or more
     const results = await Result.find({
       score: { $gte: 8 },
-      $or: [
-        { userId: req.userId },
-        { userId: { $exists: false }, username: user.name },
-        { userId: null, username: user.name },
-      ],
+      ...getResultOwnershipFilter(req, fallbackUsername),
     });
 
     const progress = {};

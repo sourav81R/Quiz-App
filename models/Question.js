@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 
 const QuestionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  authUid: { type: String },
+  authEmail: { type: String },
   quiz: { type: String, required: true }, // Quiz category (General Knowledge, Mathematics, etc.)
   question: { type: String, required: true }, // The actual question text
   options: { type: [String], required: true }, // Array of options

@@ -144,6 +144,60 @@ button:hover {
   box-shadow: 0 6px 20px rgba(118, 75, 162, 0.6);
 }
 
+.auth-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #888;
+  font-size: 0.9rem;
+  margin-top: -2px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e2e2e2;
+}
+
+.auth-form .google-auth-btn {
+  width: 100%;
+  margin: 0;
+  padding: 11px 12px;
+  background: #ffffff;
+  color: #333;
+  border: 2px solid #e6e6e6;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-weight: 600;
+}
+
+.auth-form .google-auth-btn:hover {
+  border-color: #d6d6d6;
+  background: #fafafa;
+  box-shadow: 0 5px 14px rgba(0, 0, 0, 0.12);
+}
+
+.google-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(from 40deg, #4285f4 0deg 90deg, #34a853 90deg 180deg, #fbbc05 180deg 270deg, #ea4335 270deg 360deg);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .form-switch {
   text-align: center;
   margin-top: 15px;
