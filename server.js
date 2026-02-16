@@ -138,16 +138,31 @@ const loadFallbackQuestions = () => {
 let questionsData = loadFallbackQuestions();
 let mongoConnected = false;
 let mongoConnectPromise = null;
+let lastMongoConnectError = "";
+let lastMongoFailureAt = 0;
 const isDatabaseReady = () => mongoose.connection.readyState === 1;
 
 const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const primaryMongoUri = normalizeMongoUri(rawMongoUri);
-const allowLocalMongoFallback = process.env.ALLOW_LOCAL_MONGO_FALLBACK !== "false";
+const isProductionRuntime = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
+const allowLocalMongoFallback =
+  process.env.ALLOW_LOCAL_MONGO_FALLBACK != null
+    ? process.env.ALLOW_LOCAL_MONGO_FALLBACK !== "false"
+    : !isProductionRuntime;
 const localFallbackMongoUri = normalizeMongoUri(
   process.env.LOCAL_MONGODB_URI || "mongodb://127.0.0.1:27017/quizApp"
 );
 let activeMongoUri = primaryMongoUri || (allowLocalMongoFallback ? localFallbackMongoUri : "");
 let usingLocalMongoFallback = !primaryMongoUri && activeMongoUri === localFallbackMongoUri;
+const mongoConnectOptions = {
+  serverSelectionTimeoutMS: parseInt(process.env.MONGO_SERVER_SELECTION_TIMEOUT_MS, 10) || 10000,
+  socketTimeoutMS: parseInt(process.env.MONGO_SOCKET_TIMEOUT_MS, 10) || 45000,
+};
+const mongoReconnectCooldownMs = parseInt(process.env.MONGO_RETRY_COOLDOWN_MS, 10) || 5000;
+const configuredIpFamily = parseInt(process.env.MONGO_IP_FAMILY || "", 10);
+if (configuredIpFamily === 4 || configuredIpFamily === 6) {
+  mongoConnectOptions.family = configuredIpFamily;
+}
 
 const connectMongoWithUri = async (uri) => {
   if (!uri) {
@@ -156,19 +171,29 @@ const connectMongoWithUri = async (uri) => {
 
   console.log(`Connecting to MongoDB: ${maskMongoUri(uri)}`);
   try {
-    await mongoose.connect(uri, {
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      family: 4,
-    });
+    await mongoose.connect(uri, mongoConnectOptions);
     mongoConnected = true;
+    lastMongoConnectError = "";
+    lastMongoFailureAt = 0;
     console.log("MongoDB connected");
     return true;
   } catch (err) {
     mongoConnected = false;
+    lastMongoConnectError = err?.message || String(err);
+    lastMongoFailureAt = Date.now();
     console.error("MongoDB Connection Error:", formatMongoError(err));
     return false;
   }
+};
+
+const getDatabaseUnavailableMessage = () => {
+  if (/bad auth|authentication failed/i.test(lastMongoConnectError)) {
+    return "Database authentication failed. Check MongoDB credentials in server environment variables.";
+  }
+  if (/ENOTFOUND|querySrv|ECONNREFUSED|timed out/i.test(lastMongoConnectError)) {
+    return "Database is unreachable. Check MongoDB network access and URI configuration.";
+  }
+  return "Database is not connected. Please try again.";
 };
 
 const ensureMongoConnection = async () => {
@@ -180,6 +205,10 @@ const ensureMongoConnection = async () => {
   if (isDatabaseReady()) {
     mongoConnected = true;
     return true;
+  }
+
+  if (lastMongoFailureAt && Date.now() - lastMongoFailureAt < mongoReconnectCooldownMs) {
+    return false;
   }
 
   if (mongoConnectPromise) {
@@ -250,7 +279,7 @@ app.post("/api/auth/register", async (req, res) => {
     }
 
     if (!(await ensureMongoConnection())) {
-      return res.status(503).json({ error: "Database is not connected. Please try again." });
+      return res.status(503).json({ error: getDatabaseUnavailableMessage() });
     }
 
     // Check if user already exists
@@ -305,7 +334,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 
     if (!(await ensureMongoConnection())) {
-      return res.status(503).json({ error: "Database is not connected. Please try again." });
+      return res.status(503).json({ error: getDatabaseUnavailableMessage() });
     }
 
     const user = await User.findOne({ email: normalizedEmail });
