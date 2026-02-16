@@ -127,6 +127,59 @@ button:hover {
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
 }
 
+.password-field {
+  position: relative;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 46px;
+  box-sizing: border-box;
+}
+
+.auth-form .password-toggle {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  margin: 0 !important;
+  padding: 0 !important;
+  border: none;
+  border-radius: 50%;
+  background: transparent !important;
+  color: #6b7280;
+  box-shadow: none !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-form .password-toggle:hover {
+  transform: translateY(-50%) !important;
+  color: #374151;
+  background: #eceff3 !important;
+  box-shadow: none !important;
+}
+
+.password-toggle svg {
+  width: 19px;
+  height: 19px;
+}
+
+.password-toggle .icon-eye-off {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye {
+  display: none;
+}
+
+.password-toggle.is-visible .icon-eye-off {
+  display: block;
+}
+
 .auth-form button {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -632,5 +685,189 @@ button:hover {
   border-radius: 10px;
   font-size: 0.95rem;
   outline: none;
+}
+
+/* ===== Responsive Layout ===== */
+@media (max-width: 1024px) {
+  #quiz-container,
+  #result-screen {
+    width: min(92vw, 760px);
+    padding: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  #login-screen {
+    align-items: flex-start;
+    padding: 12px 8px;
+    overflow-y: auto;
+  }
+
+  .auth-container {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    width: min(100%, 520px);
+    max-height: none;
+    margin: 6px auto;
+    padding: 20px 16px;
+    border-width: 4px;
+  }
+
+  .auth-container h1 {
+    font-size: 2rem;
+  }
+
+  .auth-form {
+    gap: 14px;
+  }
+
+  #quiz-container,
+  #result-screen {
+    position: relative;
+    top: auto;
+    left: auto;
+    transform: none;
+    width: calc(100% - 12px);
+    margin: 6px auto;
+    max-height: none;
+    padding: 16px;
+  }
+
+  #quiz-header {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+  }
+
+  #quiz-title {
+    order: 3;
+    width: 100%;
+    margin: 6px 0 2px;
+    font-size: 1.15rem;
+  }
+
+  .quiz-timer {
+    font-size: 1.15rem;
+    padding: 6px 14px;
+  }
+
+  #navigation {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  #navigation button {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 120px;
+    margin: 0;
+  }
+
+  .search-container {
+    flex-direction: column !important;
+  }
+
+  .filter-container {
+    justify-content: flex-start !important;
+  }
+
+  .leaderboard-list {
+    max-height: 48vh;
+    padding: 0 4px;
+  }
+
+  .leaderboard-item {
+    padding: 10px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .auth-container {
+    padding: 14px 12px;
+    border-width: 3px;
+    border-radius: 14px;
+  }
+
+  .auth-container h1 {
+    font-size: 1.7rem;
+  }
+
+  .subtitle {
+    font-size: 0.95rem;
+    margin-bottom: 10px;
+  }
+
+  .input-group label {
+    font-size: 0.85rem;
+  }
+
+  .auth-form input {
+    padding: 10px 12px;
+    font-size: 0.95rem;
+  }
+
+  .auth-form button,
+  .auth-form .google-auth-btn {
+    font-size: 0.95rem;
+    padding: 10px;
+  }
+
+  #quiz-container,
+  #result-screen {
+    padding: 12px;
+    border-radius: 10px;
+  }
+
+  .question-card {
+    padding: 14px;
+  }
+
+  #options-list label {
+    padding: 10px;
+    font-size: 0.92rem;
+  }
+
+  .quiz-timer {
+    font-size: 1rem;
+    padding: 6px 12px;
+  }
+
+  .quiz-timer::before {
+    font-size: 1.3rem;
+  }
+
+  #navigation button {
+    flex: 1 1 100%;
+  }
+
+  #score-text {
+    font-size: 1.05rem;
+  }
+
+  .leaderboard-item .rank {
+    font-size: 0.95rem;
+  }
+
+  .leaderboard-item .score {
+    font-size: 1.05rem;
+  }
+}
+
+@media (min-width: 1400px) {
+  .auth-container {
+    max-width: 460px;
+  }
+
+  #quiz-container,
+  #result-screen {
+    width: 760px;
+  }
+
+  .leaderboard-list {
+    max-height: 420px;
+  }
 }
 

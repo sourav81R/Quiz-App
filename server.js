@@ -99,6 +99,12 @@ const getBearerToken = (authorizationHeader = "") => {
   return token.trim();
 };
 
+const adminLoginEmail = normalizeEmail(process.env.ADMIN_EMAIL);
+const adminLoginPassword = String(process.env.ADMIN_PASSWORD || process.env.PASSWORD || "").trim();
+if (!adminLoginEmail || !adminLoginPassword) {
+  console.warn("ADMIN_EMAIL/ADMIN_PASSWORD not fully set. Admin panel login will be unavailable.");
+}
+
 const setFirebaseRequestContext = (req, decoded) => {
   req.authType = "firebase";
   req.userId = String(decoded.uid || "");
@@ -264,6 +270,75 @@ const authMiddleware = async (req, res, next) => {
       return res.status(401).json({ error: "Invalid token" });
     }
   }
+};
+
+const adminAuthMiddleware = (req, res, next) => {
+  const token = getBearerToken(req.headers.authorization);
+  if (!token) {
+    return res.status(401).json({ error: "No token provided" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (!decoded?.isAdmin) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    req.adminEmail = normalizeEmail(decoded.adminEmail);
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token" });
+  }
+};
+
+const getRecordTimestamp = (record) => {
+  if (!record) {
+    return null;
+  }
+  if (record.date) {
+    const parsed = new Date(record.date);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  if (record._id && typeof record._id.getTimestamp === "function") {
+    return record._id.getTimestamp();
+  }
+  return null;
+};
+
+const getRecordActorIdentity = (record = {}) => {
+  if (record.userId) {
+    const userId = String(record.userId);
+    return {
+      source: "local",
+      key: `local:${userId}`,
+      userId,
+      authUid: "",
+      authEmail: "",
+    };
+  }
+
+  const authUid = String(record.authUid || "").trim();
+  const authEmail = normalizeEmail(record.authEmail);
+  if (authUid) {
+    return {
+      source: "firebase",
+      key: `firebase:${authUid}`,
+      userId: "",
+      authUid,
+      authEmail,
+    };
+  }
+
+  if (authEmail) {
+    return {
+      source: "firebase",
+      key: `firebase-email:${authEmail}`,
+      userId: "",
+      authUid: "",
+      authEmail,
+    };
+  }
+
+  return null;
 };
 
 // In-memory questions database (fallback if MongoDB fails)
@@ -553,6 +628,25 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(500).json({ error: "Server configuration error" });
     }
 
+    if (adminLoginEmail && adminLoginPassword && normalizedEmail === adminLoginEmail && password === adminLoginPassword) {
+      const adminToken = createLocalJwt({
+        isAdmin: true,
+        role: "admin",
+        adminEmail: adminLoginEmail,
+      });
+
+      return res.json({
+        message: "Admin login successful",
+        token: adminToken,
+        user: {
+          id: "admin",
+          name: "Administrator",
+          email: adminLoginEmail,
+          isAdmin: true,
+        },
+      });
+    }
+
     if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: getDatabaseUnavailableMessage() });
     }
@@ -642,6 +736,393 @@ app.post("/api/auth/firebase", async (req, res) => {
       return res.status(503).json({ error: "Firebase web API key missing on server configuration." });
     }
     return res.status(500).json({ error: "Firebase authentication failed" });
+  }
+});
+
+app.post("/api/admin/login", async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    const normalizedEmail = normalizeEmail(email);
+    const rawPassword = String(password || "");
+
+    if (!normalizedEmail || !rawPassword) {
+      return res.status(400).json({ error: "Email and password are required" });
+    }
+
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error" });
+    }
+
+    if (!adminLoginEmail || !adminLoginPassword) {
+      return res.status(503).json({ error: "Admin credentials are not configured on server" });
+    }
+
+    if (normalizedEmail !== adminLoginEmail || rawPassword !== adminLoginPassword) {
+      return res.status(401).json({ error: "Invalid admin credentials" });
+    }
+
+    const token = createLocalJwt({
+      isAdmin: true,
+      role: "admin",
+      adminEmail: adminLoginEmail,
+    });
+
+    return res.json({
+      message: "Admin login successful",
+      token,
+      user: {
+        id: "admin",
+        name: "Administrator",
+        email: adminLoginEmail,
+        isAdmin: true,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Admin login failed" });
+  }
+});
+
+app.get("/api/admin/overview", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot load admin overview." });
+    }
+
+    const [localUsers, allQuestions, allResults, recentQuestionsRaw, recentResultsRaw] = await Promise.all([
+      User.find({}).select("name email createdAt").sort({ createdAt: -1 }).lean(),
+      Question.find({}).select("userId authUid authEmail").lean(),
+      Result.find({}).select("userId authUid authEmail username date").lean(),
+      Question.find({}).sort({ _id: -1 }).limit(30).lean(),
+      Result.find({}).sort({ date: -1, _id: -1 }).limit(30).lean(),
+    ]);
+
+    const localUserMap = new Map(localUsers.map((u) => [String(u._id), u]));
+    const actors = new Map();
+
+    const ensureActor = (identity) => {
+      if (!identity) {
+        return null;
+      }
+      const key = identity.key;
+      if (!actors.has(key)) {
+        actors.set(key, {
+          key,
+          source: identity.source,
+          userId: identity.userId || "",
+          authUid: identity.authUid || "",
+          authEmail: identity.authEmail || "",
+          name: "",
+          email: "",
+          questionCount: 0,
+          resultCount: 0,
+          lastActiveAt: null,
+          createdAt: null,
+        });
+      }
+      return actors.get(key);
+    };
+
+    localUsers.forEach((user) => {
+      const identity = {
+        source: "local",
+        key: `local:${String(user._id)}`,
+        userId: String(user._id),
+        authUid: "",
+        authEmail: "",
+      };
+      const actor = ensureActor(identity);
+      if (!actor) return;
+      actor.name = String(user.name || "").trim() || "Local User";
+      actor.email = normalizeEmail(user.email);
+      actor.createdAt = user.createdAt ? new Date(user.createdAt) : null;
+    });
+
+    allQuestions.forEach((question) => {
+      const identity = getRecordActorIdentity(question);
+      const actor = ensureActor(identity);
+      if (!actor) return;
+
+      actor.questionCount += 1;
+      if (!actor.email && identity.authEmail) {
+        actor.email = identity.authEmail;
+      }
+      if (!actor.name && identity.authEmail) {
+        actor.name = getNameFromEmail(identity.authEmail);
+      }
+
+      const ts = getRecordTimestamp(question);
+      if (ts && (!actor.lastActiveAt || ts > actor.lastActiveAt)) {
+        actor.lastActiveAt = ts;
+      }
+    });
+
+    allResults.forEach((result) => {
+      const identity = getRecordActorIdentity(result);
+      const actor = ensureActor(identity);
+      if (!actor) return;
+
+      actor.resultCount += 1;
+      if (!actor.email && identity.authEmail) {
+        actor.email = identity.authEmail;
+      }
+
+      const resultUsername = String(result.username || "").trim();
+      if (resultUsername && (!actor.name || actor.name === "Local User")) {
+        actor.name = resultUsername;
+      }
+      if (!actor.name && identity.authEmail) {
+        actor.name = getNameFromEmail(identity.authEmail);
+      }
+      if (!actor.name && identity.authUid) {
+        actor.name = `firebase_${identity.authUid.slice(0, 6)}`;
+      }
+
+      const ts = getRecordTimestamp(result);
+      if (ts && (!actor.lastActiveAt || ts > actor.lastActiveAt)) {
+        actor.lastActiveAt = ts;
+      }
+    });
+
+    const users = Array.from(actors.values())
+      .map((actor) => ({
+        source: actor.source,
+        userId: actor.userId,
+        authUid: actor.authUid,
+        authEmail: actor.authEmail,
+        name: actor.name || (actor.email ? getNameFromEmail(actor.email) : "Unknown User"),
+        email: actor.email || "",
+        questionCount: actor.questionCount,
+        resultCount: actor.resultCount,
+        totalActivity: actor.questionCount + actor.resultCount,
+        lastActiveAt: actor.lastActiveAt ? actor.lastActiveAt.toISOString() : "",
+        createdAt: actor.createdAt ? actor.createdAt.toISOString() : "",
+      }))
+      .sort((a, b) => {
+        if (b.totalActivity !== a.totalActivity) return b.totalActivity - a.totalActivity;
+        return new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime();
+      });
+
+    const recentQuestions = recentQuestionsRaw.map((question) => {
+      const identity = getRecordActorIdentity(question);
+      let ownerName = "Unknown User";
+      if (identity?.source === "local" && identity.userId) {
+        ownerName = String(localUserMap.get(identity.userId)?.name || "Local User");
+      } else if (identity?.authEmail) {
+        ownerName = getNameFromEmail(identity.authEmail);
+      } else if (identity?.authUid) {
+        ownerName = `firebase_${identity.authUid.slice(0, 6)}`;
+      }
+
+      return {
+        _id: String(question._id),
+        quiz: String(question.quiz || ""),
+        question: String(question.question || ""),
+        level: question.level || 1,
+        userId: identity?.userId || "",
+        authUid: identity?.authUid || "",
+        authEmail: identity?.authEmail || "",
+        ownerName,
+        createdAt: getRecordTimestamp(question)?.toISOString() || "",
+      };
+    });
+
+    const recentResults = recentResultsRaw.map((result) => {
+      const identity = getRecordActorIdentity(result);
+      let ownerName = String(result.username || "").trim();
+      if (!ownerName && identity?.source === "local" && identity.userId) {
+        ownerName = String(localUserMap.get(identity.userId)?.name || "Local User");
+      }
+      if (!ownerName && identity?.authEmail) {
+        ownerName = getNameFromEmail(identity.authEmail);
+      }
+      if (!ownerName && identity?.authUid) {
+        ownerName = `firebase_${identity.authUid.slice(0, 6)}`;
+      }
+
+      return {
+        _id: String(result._id),
+        score: result.score || 0,
+        quiz: String(result.quiz || ""),
+        level: result.level || 1,
+        date: result.date ? new Date(result.date).toISOString() : "",
+        username: ownerName || "Unknown User",
+        userId: identity?.userId || "",
+        authUid: identity?.authUid || "",
+        authEmail: identity?.authEmail || "",
+      };
+    });
+
+    return res.json({
+      stats: {
+        localUsersCount: localUsers.length,
+        trackedUsersCount: users.length,
+        totalQuestionsCount: allQuestions.length,
+        totalResultsCount: allResults.length,
+      },
+      users,
+      recentQuestions,
+      recentResults,
+    });
+  } catch (err) {
+    console.error("Admin overview error:", err);
+    return res.status(500).json({ error: "Failed to load admin overview" });
+  }
+});
+
+app.delete("/api/admin/clear-all", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot clear all data." });
+    }
+
+    const [userDeleteResult, questionDeleteResult, resultDeleteResult] = await Promise.all([
+      User.deleteMany({}),
+      Question.deleteMany({}),
+      Result.deleteMany({}),
+    ]);
+
+    // Keep static fallback questions (from json) and drop user-created in-memory records.
+    questionsData = questionsData.filter((q) => {
+      const hasDbIdentifier = Boolean(q && (q._id || q.userId || q.authUid || q.authEmail));
+      return !hasDbIdentifier;
+    });
+
+    return res.json({
+      message: "All user data cleared successfully",
+      deleted: {
+        users: userDeleteResult.deletedCount || 0,
+        questions: questionDeleteResult.deletedCount || 0,
+        results: resultDeleteResult.deletedCount || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Admin clear-all error:", err);
+    return res.status(500).json({ error: "Failed to clear all data" });
+  }
+});
+
+app.post("/api/admin/users/remove", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot remove user data." });
+    }
+
+    const source = String(req.body?.source || "").trim().toLowerCase();
+    const userId = String(req.body?.userId || "").trim();
+    const authUid = String(req.body?.authUid || "").trim();
+    const authEmail = normalizeEmail(req.body?.authEmail);
+
+    if (!source || (source !== "local" && source !== "firebase")) {
+      return res.status(400).json({ error: "Invalid source. Use local or firebase." });
+    }
+
+    if (source === "local") {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        return res.status(400).json({ error: "Invalid local user id" });
+      }
+
+      const localObjectId = new mongoose.Types.ObjectId(userId);
+      const localUser = await User.findById(localObjectId).lean();
+
+      const questionDeleteResult = await Question.deleteMany({ userId: localObjectId });
+      const resultFilter = { $or: [{ userId: localObjectId }] };
+      if (localUser?.name) {
+        resultFilter.$or.push({
+          userId: { $exists: false },
+          authUid: { $exists: false },
+          authEmail: { $exists: false },
+          username: localUser.name,
+        });
+        resultFilter.$or.push({
+          userId: null,
+          authUid: null,
+          authEmail: null,
+          username: localUser.name,
+        });
+      }
+
+      const resultDeleteResult = await Result.deleteMany(resultFilter);
+      const userDeleteResult = await User.deleteOne({ _id: localObjectId });
+
+      return res.json({
+        message: "Local user data removed",
+        deleted: {
+          users: userDeleteResult.deletedCount || 0,
+          questions: questionDeleteResult.deletedCount || 0,
+          results: resultDeleteResult.deletedCount || 0,
+        },
+      });
+    }
+
+    const ownershipFilters = [];
+    if (authUid) {
+      ownershipFilters.push({ authUid });
+    }
+    if (authEmail) {
+      ownershipFilters.push({ authEmail });
+    }
+
+    if (!ownershipFilters.length) {
+      return res.status(400).json({ error: "authUid or authEmail is required for firebase user removal" });
+    }
+
+    const [questionDeleteResult, resultDeleteResult] = await Promise.all([
+      Question.deleteMany({ $or: ownershipFilters }),
+      Result.deleteMany({ $or: ownershipFilters }),
+    ]);
+
+    return res.json({
+      message: "Firebase user data removed",
+      deleted: {
+        users: 0,
+        questions: questionDeleteResult.deletedCount || 0,
+        results: resultDeleteResult.deletedCount || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Admin remove user error:", err);
+    return res.status(500).json({ error: "Failed to remove user data" });
+  }
+});
+
+app.delete("/api/admin/questions/:questionId", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot delete question." });
+    }
+
+    const deleteResult = await Question.deleteOne({ _id: req.params.questionId });
+    if (!deleteResult.deletedCount) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    questionsData = questionsData.filter((q) => String(q._id || "") !== String(req.params.questionId));
+    return res.json({ message: "Question deleted by admin" });
+  } catch (err) {
+    if (err?.name === "CastError") {
+      return res.status(400).json({ error: "Invalid question id" });
+    }
+    return res.status(500).json({ error: "Failed to delete question" });
+  }
+});
+
+app.delete("/api/admin/results/:resultId", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot delete result." });
+    }
+
+    const deleteResult = await Result.deleteOne({ _id: req.params.resultId });
+    if (!deleteResult.deletedCount) {
+      return res.status(404).json({ error: "Result not found" });
+    }
+
+    return res.json({ message: "Result deleted by admin" });
+  } catch (err) {
+    if (err?.name === "CastError") {
+      return res.status(400).json({ error: "Invalid result id" });
+    }
+    return res.status(500).json({ error: "Failed to delete result" });
   }
 });
 

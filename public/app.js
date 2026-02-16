@@ -20,6 +20,18 @@ let editingQuestionId = null;
 const QUIZ_CATEGORIES = ["General Knowledge", "Mathematics", "Politics", "Nature"];
 const QUESTIONS_PER_LEVEL = 10;
 const PASSING_SCORE = 8;
+const QUIZ_CARD_BG_CLASS = {
+  "General Knowledge": "quiz-bg-general-knowledge",
+  Mathematics: "quiz-bg-mathematics",
+  Politics: "quiz-bg-politics",
+  Nature: "quiz-bg-nature",
+};
+const QUIZ_TITLE_CLASS = {
+  "General Knowledge": "quiz-title-general-knowledge",
+  Mathematics: "quiz-title-mathematics",
+  Politics: "quiz-title-politics",
+  Nature: "quiz-title-nature",
+};
 
 let timerInterval = null;
 let timeLeft = 10;
@@ -58,7 +70,9 @@ function mapFirebaseAuthError(err) {
   if (code.includes("too-many-requests")) return "Too many attempts. Please try again later.";
   if (code.includes("popup-closed-by-user")) return "Google sign-in was cancelled.";
   if (code.includes("popup-blocked")) return "Popup was blocked. Please allow popups and try again.";
-  if (code.includes("operation-not-allowed")) return "Google sign-in is not enabled in Firebase Authentication.";
+  if (code.includes("operation-not-allowed")) {
+    return "Email/password sign-in is disabled in Firebase Authentication.";
+  }
   if (code.includes("unauthorized-domain")) return "This domain is not authorized in Firebase Authentication settings.";
   if (code.includes("invalid-credential") || code.includes("wrong-password") || code.includes("user-not-found")) {
     return "Invalid email or password.";
@@ -75,6 +89,21 @@ function createGoogleProvider() {
   return provider;
 }
 
+function setAuthSession(token, user) {
+  localStorage.setItem("authToken", token);
+  localStorage.setItem("currentUser", JSON.stringify(user));
+  authToken = token;
+  currentUser = user;
+}
+
+async function parseJsonResponse(response) {
+  try {
+    return await response.json();
+  } catch (err) {
+    return {};
+  }
+}
+
 async function exchangeFirebaseSession(firebaseUser, fallbackName = "") {
   const idToken = await firebaseUser.getIdToken();
   const res = await fetch("/api/auth/firebase", {
@@ -86,20 +115,44 @@ async function exchangeFirebaseSession(firebaseUser, fallbackName = "") {
     }),
   });
 
-  let data = {};
-  try {
-    data = await res.json();
-  } catch (err) {
-    data = {};
-  }
+  const data = await parseJsonResponse(res);
   if (!res.ok) {
     throw new Error(data.error || `Firebase login failed (${res.status})`);
   }
 
-  localStorage.setItem("authToken", data.token);
-  localStorage.setItem("currentUser", JSON.stringify(data.user));
-  authToken = data.token;
-  currentUser = data.user;
+  setAuthSession(data.token, data.user);
+}
+
+async function tryLocalRegister(name, email, password, confirmPassword) {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, email, password, confirmPassword }),
+  });
+
+  const data = await parseJsonResponse(res);
+  if (res.ok && data?.token && data?.user) {
+    setAuthSession(data.token, data.user);
+    return { ok: true, status: res.status, data };
+  }
+
+  return { ok: false, status: res.status, data };
+}
+
+async function tryLocalLogin(email, password) {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+
+  const data = await parseJsonResponse(res);
+  if (res.ok && data?.token && data?.user) {
+    setAuthSession(data.token, data.user);
+    return { ok: true, status: res.status, data };
+  }
+
+  return { ok: false, status: res.status, data };
 }
 
 // ================== AUTH FUNCTIONS ==================
@@ -120,26 +173,26 @@ async function handleRegister() {
   }
 
   try {
-    const firebaseAuth = await waitForFirebaseAuth();
-    if (!firebaseAuth) {
-      showAuthMessage("Firebase auth is not configured in frontend.", "error");
+    let localAttempt = { ok: false, status: 0, data: {} };
+    try {
+      localAttempt = await tryLocalRegister(name, email, password, confirmPassword);
+    } catch (localErr) {
+      console.warn("Local registration endpoint unavailable.");
+    }
+
+    if (localAttempt.ok) {
+      showAuthMessage("Registration successful! Welcome!", "success");
+      setTimeout(() => {
+        document.getElementById("login-screen").style.display = "none";
+        renderStartScreen();
+      }, 1200);
       return;
     }
 
-    const userCredential = await firebaseAuth.createUserWithEmailAndPassword(email, password);
-    if (name && userCredential?.user) {
-      await userCredential.user.updateProfile({ displayName: name });
-    }
-    await exchangeFirebaseSession(userCredential.user, name);
-
-    showAuthMessage("Registration successful! Welcome!", "success");
-    setTimeout(() => {
-      document.getElementById("login-screen").style.display = "none";
-      renderStartScreen();
-    }, 1500);
+    showAuthMessage(localAttempt.data?.error || "Registration failed. Please try again.", "error");
   } catch (err) {
     console.error("Registration error:", err);
-    showAuthMessage(mapFirebaseAuthError(err), "error");
+    showAuthMessage("Registration failed. Please try again.", "error");
   }
 }
 
@@ -153,23 +206,31 @@ async function handleLogin() {
   }
 
   try {
-    const firebaseAuth = await waitForFirebaseAuth();
-    if (!firebaseAuth) {
-      showAuthMessage("Firebase auth is not configured in frontend.", "error");
+    let localAttempt = { ok: false, status: 0, data: {} };
+    try {
+      localAttempt = await tryLocalLogin(email, password);
+    } catch (localErr) {
+      console.warn("Local login endpoint unavailable.");
+    }
+
+    if (localAttempt.ok) {
+      showAuthMessage("Login successful! Welcome back!", "success");
+      setTimeout(() => {
+        document.getElementById("login-screen").style.display = "none";
+        renderStartScreen();
+      }, 1200);
       return;
     }
 
-    const userCredential = await firebaseAuth.signInWithEmailAndPassword(email, password);
-    await exchangeFirebaseSession(userCredential.user);
+    if (localAttempt.status && localAttempt.status !== 401 && localAttempt.status !== 503) {
+      showAuthMessage(localAttempt.data?.error || "Login failed. Please try again.", "error");
+      return;
+    }
 
-    showAuthMessage("Login successful! Welcome back!", "success");
-    setTimeout(() => {
-      document.getElementById("login-screen").style.display = "none";
-      renderStartScreen();
-    }, 1500);
+    showAuthMessage(localAttempt.data?.error || "Invalid email or password.", "error");
   } catch (err) {
     console.error("Login error:", err);
-    showAuthMessage(mapFirebaseAuthError(err), "error");
+    showAuthMessage("Login failed. Please try again.", "error");
   }
 }
 
@@ -257,6 +318,7 @@ async function handleLogout() {
     document.getElementById("register-email").value = "";
     document.getElementById("register-password").value = "";
     document.getElementById("register-confirm-password").value = "";
+    resetPasswordFieldVisibility();
 
     showAuthMessage("You have been logged out", "success");
   }
@@ -286,18 +348,54 @@ function handleUnauthorizedSession(message = "Session expired. Please login agai
   if (quizContainer) quizContainer.style.display = "none";
   if (resultScreen) resultScreen.style.display = "none";
   showLogin();
+  resetPasswordFieldVisibility();
 
   showAuthMessage(message, "error");
 }
 
 function showLogin() {
+  resetPasswordFieldVisibility();
   document.getElementById("login-form").style.display = "block";
   document.getElementById("register-form").style.display = "none";
 }
 
 function showRegister() {
+  resetPasswordFieldVisibility();
   document.getElementById("login-form").style.display = "none";
   document.getElementById("register-form").style.display = "block";
+}
+
+function resetPasswordFieldVisibility() {
+  const passwordFields = document.querySelectorAll(".password-field");
+  passwordFields.forEach((field) => {
+    const input = field.querySelector("input");
+    const toggleBtn = field.querySelector(".password-toggle");
+    if (input && input.type !== "password") {
+      input.type = "password";
+    }
+    if (toggleBtn) {
+      toggleBtn.classList.remove("is-visible");
+      toggleBtn.setAttribute("aria-label", "Show password");
+      toggleBtn.setAttribute("title", "Show password");
+    }
+  });
+}
+
+function togglePasswordVisibility(inputId, toggleBtn) {
+  const input = document.getElementById(inputId);
+  if (!input) {
+    return;
+  }
+
+  const reveal = input.type === "password";
+  input.type = reveal ? "text" : "password";
+
+  if (toggleBtn) {
+    toggleBtn.classList.toggle("is-visible", reveal);
+    const label = reveal ? "Hide password" : "Show password";
+    toggleBtn.setAttribute("aria-label", label);
+    toggleBtn.setAttribute("title", label);
+  }
 }
 
 function showAuthMessage(message, type) {
@@ -822,7 +920,10 @@ document.addEventListener("DOMContentLoaded", initMuteButton);
 
 // ================== PROGRESS ==================
 async function fetchProgress() {
-  if (!authToken) return;
+  if (!authToken || currentUser?.isAdmin) {
+    userProgress = {};
+    return;
+  }
   try {
     const res = await fetch("/api/user/progress", {
       headers: { "Authorization": `Bearer ${authToken}` }
@@ -927,17 +1028,71 @@ async function renderStartScreen() {
         box-sizing: border-box;
       }
       .quiz-card {
-        background: #ffffff;
+        background-color: #ffffff;
         border: 1px solid #e7e7e7;
         border-radius: 12px;
-        padding: 14px;
         box-shadow: 0 4px 8px rgba(0,0,0,0.06);
         min-width: 0;
         box-sizing: border-box;
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
       }
-      .quiz-card h3 {
+      .quiz-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 18px rgba(0,0,0,0.12);
+      }
+      .quiz-card-hero {
+        height: 140px;
+        background-image: var(--quiz-card-bg-image, none);
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        position: relative;
+        transition: transform 0.25s ease;
+      }
+      .quiz-card:hover .quiz-card-hero {
+        transform: scale(1.03);
+      }
+      .quiz-card-hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.2));
+      }
+      .quiz-card-body {
+        padding: 14px;
+      }
+      .quiz-card.quiz-bg-general-knowledge {
+        --quiz-card-bg-image: url('/images/category-general-knowledge.svg');
+      }
+      .quiz-card.quiz-bg-mathematics {
+        --quiz-card-bg-image: url('/images/category-mathematics.svg');
+      }
+      .quiz-card.quiz-bg-politics {
+        --quiz-card-bg-image: url('/images/category-politics.svg');
+      }
+      .quiz-card.quiz-bg-nature {
+        --quiz-card-bg-image: url('/images/category-nature.svg');
+      }
+      .quiz-title {
         margin: 0 0 8px;
-        color: #2d3436;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: 0.2px;
+        line-height: 1.15;
+        text-shadow: 0 1px 1px rgba(0,0,0,0.08);
+      }
+      .quiz-title-general-knowledge {
+        color: #1f6fb2;
+      }
+      .quiz-title-mathematics {
+        color: #6a3fd8;
+      }
+      .quiz-title-politics {
+        color: #b63b36;
+      }
+      .quiz-title-nature {
+        color: #1f8f58;
       }
       .quiz-lock-note {
         margin: 0 0 12px;
@@ -1000,9 +1155,78 @@ async function renderStartScreen() {
       #quiz-buttons .add-quiz-btn::before {
         content: none !important;
       }
+      @media (max-width: 1024px) {
+        .start-container {
+          width: min(980px, calc(100% - 20px));
+          margin: 12px auto;
+          padding: 16px;
+        }
+        #quiz-buttons {
+          gap: 16px;
+          padding: 0 4px;
+        }
+      }
+      @media (max-width: 820px) {
+        .user-info {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 10px;
+          margin-bottom: 18px;
+          padding: 12px 14px;
+        }
+        .logout-btn {
+          width: 100%;
+          margin: 0;
+        }
+        #user-welcome {
+          font-size: 1rem;
+        }
+      }
       @media (max-width: 700px) {
         #quiz-buttons {
           grid-template-columns: 1fr;
+          gap: 14px;
+          padding: 0;
+        }
+        .quiz-card-hero {
+          height: 130px;
+        }
+        .quiz-card-body {
+          padding: 12px;
+        }
+        .quiz-title {
+          font-size: 1.65rem;
+        }
+      }
+      @media (max-width: 520px) {
+        .start-container {
+          width: calc(100% - 12px);
+          padding: 12px;
+          border-width: 3px;
+          border-radius: 12px;
+        }
+        .start-container h1 {
+          margin-bottom: 18px;
+        }
+        .quiz-card-hero {
+          height: 120px;
+        }
+        .quiz-title {
+          font-size: 1.45rem;
+          margin-bottom: 6px;
+        }
+        .quiz-lock-note {
+          font-size: 0.85rem;
+          margin-bottom: 10px;
+        }
+        .quiz-level-row {
+          grid-template-columns: 1fr;
+          gap: 8px;
+        }
+        .quiz-level-btn {
+          min-height: 62px;
+          font-size: 0.92rem;
+          padding: 10px;
         }
       }
     `;
@@ -1010,6 +1234,7 @@ async function renderStartScreen() {
   }
 
   const userName = currentUser ? currentUser.name : "User";
+  const isAdminUser = Boolean(currentUser && currentUser.isAdmin);
   
   const titleText = "Choose a Quiz";
   const colors = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#1abc9c", "#3498db", "#9b59b6", "#34495e", "#d35400", "#c0392b", "#16a085", "#27ae60", "#2980b9"];
@@ -1019,26 +1244,32 @@ async function renderStartScreen() {
     return `<span class="letter" style="color: ${color}; animation-delay: ${i * 0.1}s">${char}</span>`;
   }).join("");
 
-  const quizCards = QUIZ_CATEGORIES.map((quizName) => {
+  const visibleQuizCategories = isAdminUser ? [] : QUIZ_CATEGORIES;
+  const quizCards = visibleQuizCategories.map((quizName) => {
     const level2Unlocked = isLevelUnlocked(quizName, 2);
+    const cardBgClass = QUIZ_CARD_BG_CLASS[quizName] || "";
+    const titleClass = QUIZ_TITLE_CLASS[quizName] || "";
     const levelStatus = level2Unlocked
       ? "Level 2 is unlocked."
       : `Score ${PASSING_SCORE}/${QUESTIONS_PER_LEVEL} in Level 1 to unlock Level 2.`;
 
     return `
-      <div class="quiz-card">
-        <h3>${escapeHtml(quizName)}</h3>
-        <p class="quiz-lock-note">${escapeHtml(levelStatus)}</p>
-        <div class="quiz-level-row">
-          <button type="button" class="quiz-level-btn" onclick="startLevelQuiz('${escapeJs(quizName)}', 1)">Level 1</button>
-          <button
-            type="button"
-            class="quiz-level-btn ${level2Unlocked ? "" : "locked"}"
-            onclick="startLevelQuiz('${escapeJs(quizName)}', 2)"
-            ${level2Unlocked ? "" : "disabled"}
-          >
-            Level 2${level2Unlocked ? "" : " (Locked)"}
-          </button>
+      <div class="quiz-card ${cardBgClass}">
+        <div class="quiz-card-hero" role="img" aria-label="${escapeHtml(quizName)} background image"></div>
+        <div class="quiz-card-body">
+          <h3 class="quiz-title ${titleClass}">${escapeHtml(quizName)}</h3>
+          <p class="quiz-lock-note">${escapeHtml(levelStatus)}</p>
+          <div class="quiz-level-row">
+            <button type="button" class="quiz-level-btn" onclick="startLevelQuiz('${escapeJs(quizName)}', 1)">Level 1</button>
+            <button
+              type="button"
+              class="quiz-level-btn ${level2Unlocked ? "" : "locked"}"
+              onclick="startLevelQuiz('${escapeJs(quizName)}', 2)"
+              ${level2Unlocked ? "" : "disabled"}
+            >
+              Level 2${level2Unlocked ? "" : " (Locked)"}
+            </button>
+          </div>
         </div>
       </div>
     `;
@@ -1047,17 +1278,304 @@ async function renderStartScreen() {
   startScreen.innerHTML = `
     <div class="start-container">
       <div class="user-info">
-        <p id="user-welcome">👋 Welcome back, <span style="color: #6c5ce7;">${escapeHtml(userName)}</span>!</p>
+        <p id="user-welcome">👋 Welcome back, <span style="color: #6c5ce7;">${escapeHtml(userName)}</span>${isAdminUser ? ' <span style="color:#d35400;">(Admin)</span>' : ""}!</p>
         <button onclick="handleLogout()" class="logout-btn">Logout</button>
       </div>
       <h1>${animatedTitle}</h1>
+      ${isAdminUser ? '<p style="margin: -10px 0 14px; color:#555;">Admin account detected. Use the Admin Panel to manage users, questions, and results.</p>' : ""}
       <div id="quiz-buttons">
         ${quizCards}
+        ${
+          isAdminUser
+            ? `<button type="button" onclick="showAdminPanel()" class="add-quiz-btn" style="background: linear-gradient(135deg, #2d3436, #636e72) !important;">Admin Panel</button>`
+            : ""
+        }
         <button type="button" onclick="showLeaderboard()" class="add-quiz-btn" style="background: linear-gradient(135deg, #f1c40f, #f39c12) !important;">🏆 View Leaderboard</button>
-        <button type="button" onclick="renderAddQuestionScreen()" class="add-quiz-btn">➕ Add New Question</button>
+        ${
+          isAdminUser
+            ? ""
+            : '<button type="button" onclick="renderAddQuestionScreen()" class="add-quiz-btn">➕ Add New Question</button>'
+        }
       </div>
     </div>
   `;
+}
+
+async function adminRequest(url, options = {}) {
+  if (!authToken) {
+    alert("Please login first.");
+    return null;
+  }
+
+  const headers = {
+    ...(options.headers || {}),
+    Authorization: `Bearer ${authToken}`,
+  };
+  if (options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(url, { ...options, headers });
+  const data = await parseJsonResponse(res);
+
+  if (res.status === 401) {
+    handleUnauthorizedSession("Admin session expired. Please login again.");
+    return null;
+  }
+  if (res.status === 403) {
+    alert(data.error || "Admin access required.");
+    return null;
+  }
+  if (!res.ok) {
+    alert(data.error || "Request failed.");
+    return null;
+  }
+
+  return data;
+}
+
+function formatDisplayDate(input) {
+  if (!input) return "-";
+  const parsed = new Date(input);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString();
+}
+
+function resolveAdminOwnerLabel(entry) {
+  if (!entry) return "Unknown";
+  if (entry.username) return entry.username;
+  if (entry.ownerName) return entry.ownerName;
+  if (entry.authEmail) return entry.authEmail;
+  if (entry.authUid) return `firebase:${entry.authUid.slice(0, 8)}`;
+  if (entry.userId) return `local:${entry.userId.slice(0, 8)}`;
+  return "Unknown";
+}
+
+async function showAdminPanel() {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  try {
+    const data = await adminRequest("/api/admin/overview");
+    if (!data) return;
+
+    const startScreen = document.getElementById("start-screen");
+    if (!startScreen) return;
+
+    const stats = data.stats || {};
+    const users = Array.isArray(data.users) ? data.users : [];
+    const recentQuestions = Array.isArray(data.recentQuestions) ? data.recentQuestions : [];
+    const recentResults = Array.isArray(data.recentResults) ? data.recentResults : [];
+
+    startScreen.innerHTML = `
+      <div class="start-container">
+        <h1 style="margin-bottom: 16px;">Admin Panel</h1>
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 10px 16px;">
+          <div style="background:#f7f9fc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+            <p style="margin:0; font-size:0.8rem; color:#6b7280;">Local Users</p>
+            <p style="margin:6px 0 0; font-size:1.35rem; font-weight:700;">${stats.localUsersCount || 0}</p>
+          </div>
+          <div style="background:#f7f9fc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+            <p style="margin:0; font-size:0.8rem; color:#6b7280;">Tracked Users</p>
+            <p style="margin:6px 0 0; font-size:1.35rem; font-weight:700;">${stats.trackedUsersCount || 0}</p>
+          </div>
+          <div style="background:#f7f9fc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+            <p style="margin:0; font-size:0.8rem; color:#6b7280;">Questions</p>
+            <p style="margin:6px 0 0; font-size:1.35rem; font-weight:700;">${stats.totalQuestionsCount || 0}</p>
+          </div>
+          <div style="background:#f7f9fc; border:1px solid #e2e8f0; border-radius:10px; padding:12px;">
+            <p style="margin:0; font-size:0.8rem; color:#6b7280;">Results</p>
+            <p style="margin:6px 0 0; font-size:1.35rem; font-weight:700;">${stats.totalResultsCount || 0}</p>
+          </div>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:8px; margin: 0 10px 8px;">
+          <button onclick="adminClearAllData()" class="filter-btn" style="padding:8px 14px; background:#ff6b6b; color:#fff;">Clear All</button>
+          <button onclick="showAdminPanel()" class="filter-btn active" style="padding:8px 14px;">Refresh</button>
+        </div>
+
+        <h2 style="text-align:left; margin: 0 10px 8px;">Users Activity</h2>
+        <div class="leaderboard-list" style="max-height: 280px; margin-top: 8px;">
+          ${
+            users.length
+              ? users
+                  .map(
+                    (u, idx) => `
+                <div class="leaderboard-item" style="align-items:flex-start;">
+                  <div style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
+                    <span class="rank">${idx + 1}. ${escapeHtml(u.name || "Unknown User")}</span>
+                    <small style="color:#6b7280;">${escapeHtml(u.email || u.authEmail || u.userId || u.authUid || "-")}</small>
+                    <small style="color:#6b7280;">Questions: ${u.questionCount || 0} | Results: ${u.resultCount || 0} | Last Active: ${escapeHtml(formatDisplayDate(u.lastActiveAt))}</small>
+                  </div>
+                  <button
+                    onclick="adminRemoveUserData('${escapeJs(u.source || "")}','${escapeJs(u.userId || "")}','${escapeJs(u.authUid || "")}','${escapeJs(u.authEmail || "")}','${escapeJs(u.name || "this user")}')"
+                    style="margin:0; padding:6px 10px; font-size:0.78rem; background:#e74c3c; color:#fff; border:none; border-radius:8px;"
+                  >
+                    Delete
+                  </button>
+                </div>
+              `
+                  )
+                  .join("")
+              : "<p style='text-align:center;'>No users found.</p>"
+          }
+        </div>
+
+        <h2 style="text-align:left; margin: 14px 10px 8px;">Recent Questions</h2>
+        <div class="leaderboard-list" style="max-height: 220px; margin-top: 8px;">
+          ${
+            recentQuestions.length
+              ? recentQuestions
+                  .map(
+                    (q) => `
+                <div class="leaderboard-item" style="align-items:flex-start;">
+                  <div style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left; min-width:0;">
+                    <span class="rank">${escapeHtml(q.quiz || "Quiz")} (L${q.level || 1})</span>
+                    <small style="color:#6b7280;">${escapeHtml(resolveAdminOwnerLabel(q))}</small>
+                    <small style="color:#6b7280; white-space:normal;">${escapeHtml((q.question || "").slice(0, 130))}${(q.question || "").length > 130 ? "..." : ""}</small>
+                  </div>
+                  <button
+                    onclick="adminDeleteQuestion('${escapeJs(String(q._id || ""))}')"
+                    style="margin:0; padding:6px 10px; font-size:0.78rem; background:#c0392b; color:#fff; border:none; border-radius:8px;"
+                  >
+                    Delete
+                  </button>
+                </div>
+              `
+                  )
+                  .join("")
+              : "<p style='text-align:center;'>No questions found.</p>"
+          }
+        </div>
+
+        <h2 style="text-align:left; margin: 14px 10px 8px;">Recent Results</h2>
+        <div class="leaderboard-list" style="max-height: 220px; margin-top: 8px;">
+          ${
+            recentResults.length
+              ? recentResults
+                  .map(
+                    (r) => `
+                <div class="leaderboard-item" style="align-items:flex-start;">
+                  <div style="display:flex; flex-direction:column; align-items:flex-start; gap:2px; text-align:left;">
+                    <span class="rank">${escapeHtml(resolveAdminOwnerLabel(r))}</span>
+                    <small style="color:#6b7280;">${escapeHtml(r.quiz || "Quiz")} | Score: ${r.score || 0} | Level: ${r.level || 1}</small>
+                    <small style="color:#6b7280;">${escapeHtml(formatDisplayDate(r.date))}</small>
+                  </div>
+                  <button
+                    onclick="adminDeleteResult('${escapeJs(String(r._id || ""))}')"
+                    style="margin:0; padding:6px 10px; font-size:0.78rem; background:#c0392b; color:#fff; border:none; border-radius:8px;"
+                  >
+                    Delete
+                  </button>
+                </div>
+              `
+                  )
+                  .join("")
+              : "<p style='text-align:center;'>No results found.</p>"
+          }
+        </div>
+
+        <button onclick="renderStartScreen()" class="logout-btn" style="background: #b2bec3; width: 100%; margin-top: 14px;">Back to Menu</button>
+      </div>
+    `;
+  } catch (err) {
+    console.error("Admin panel load error:", err);
+    alert("Failed to load admin panel.");
+  }
+}
+
+async function adminRemoveUserData(source, userId, authUid, authEmail, displayName) {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  if (!confirm(`Remove all data for ${displayName || "this user"}?`)) {
+    return;
+  }
+
+  const payload = { source, userId, authUid, authEmail };
+  const data = await adminRequest("/api/admin/users/remove", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!data) return;
+
+  const deleted = data.deleted || {};
+  alert(
+    `Removed data. Users: ${deleted.users || 0}, Questions: ${deleted.questions || 0}, Results: ${deleted.results || 0}`
+  );
+  await showAdminPanel();
+}
+
+async function adminClearAllData() {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  if (!confirm("Clear ALL users, questions, and results? This action cannot be undone.")) {
+    return;
+  }
+
+  const data = await adminRequest("/api/admin/clear-all", {
+    method: "DELETE",
+  });
+  if (!data) return;
+
+  const deleted = data.deleted || {};
+  alert(
+    `Cleared all data. Users: ${deleted.users || 0}, Questions: ${deleted.questions || 0}, Results: ${deleted.results || 0}`
+  );
+  await showAdminPanel();
+}
+
+async function adminDeleteQuestion(questionId) {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  if (!questionId) {
+    alert("Invalid question id.");
+    return;
+  }
+
+  if (!confirm("Delete this question?")) {
+    return;
+  }
+
+  const data = await adminRequest(`/api/admin/questions/${encodeURIComponent(questionId)}`, {
+    method: "DELETE",
+  });
+  if (!data) return;
+
+  await showAdminPanel();
+}
+
+async function adminDeleteResult(resultId) {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  if (!resultId) {
+    alert("Invalid result id.");
+    return;
+  }
+
+  if (!confirm("Delete this result?")) {
+    return;
+  }
+
+  const data = await adminRequest(`/api/admin/results/${encodeURIComponent(resultId)}`, {
+    method: "DELETE",
+  });
+  if (!data) return;
+
+  await showAdminPanel();
 }
 
 async function showLeaderboard(quizFilter = "", searchTerm = "") {
@@ -1070,7 +1588,7 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
     if (!startScreen) return;
 
     const categories = QUIZ_CATEGORIES;
-    const canManageHistory = Boolean(authToken && currentUser && currentUser.id);
+    const canManageHistory = Boolean(authToken && currentUser && currentUser.id && !currentUser.isAdmin);
 
     startScreen.innerHTML = `
       <div class="start-container">
@@ -1270,6 +1788,10 @@ function renderAddQuestionScreen() {
 
   if (!authToken) {
     alert("Please login to add or manage questions.");
+    return;
+  }
+  if (currentUser?.isAdmin) {
+    alert("Use Admin Panel to manage all users and content.");
     return;
   }
 

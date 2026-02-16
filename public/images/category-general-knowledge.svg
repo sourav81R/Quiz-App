@@ -1,0 +1,22 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#5dade2"/>
+      <stop offset="55%" stop-color="#48c9b0"/>
+      <stop offset="100%" stop-color="#2e86c1"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#bg)"/>
+  <circle cx="325" cy="350" r="180" fill="#2f72d8" opacity="0.92"/>
+  <path d="M170 330C215 290 250 300 290 330C330 360 370 350 420 310C450 360 455 425 420 470C350 520 250 520 190 475C160 430 155 385 170 330Z" fill="#3dd78f" opacity="0.9"/>
+  <ellipse cx="325" cy="350" rx="160" ry="180" fill="none" stroke="#d6f5ff" stroke-opacity="0.6" stroke-width="8"/>
+  <ellipse cx="325" cy="350" rx="90" ry="180" fill="none" stroke="#d6f5ff" stroke-opacity="0.45" stroke-width="6"/>
+  <path d="M150 350H500M190 280H460M190 420H460" stroke="#d6f5ff" stroke-opacity="0.45" stroke-width="6"/>
+  <rect x="665" y="220" width="330" height="230" rx="20" fill="#fff" fill-opacity="0.92"/>
+  <rect x="690" y="245" width="130" height="180" rx="12" fill="#f9e79f"/>
+  <rect x="840" y="245" width="130" height="180" rx="12" fill="#aed6f1"/>
+  <path d="M830 245V430" stroke="#d5d8dc" stroke-width="5"/>
+  <circle cx="790" cy="500" r="45" fill="#ffffff" fill-opacity="0.85"/>
+  <text x="790" y="515" text-anchor="middle" font-family="Arial, sans-serif" font-size="56" font-weight="700" fill="#5d6d7e">?</text>
+  <text x="600" y="625" font-family="Arial, sans-serif" font-size="64" font-weight="700" fill="#ffffff" fill-opacity="0.35">GENERAL KNOWLEDGE</text>
+</svg>

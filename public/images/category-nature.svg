@@ -1,0 +1,21 @@
+<svg width="1200" height="700" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#27ae60"/>
+      <stop offset="50%" stop-color="#1abc9c"/>
+      <stop offset="100%" stop-color="#16a085"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#bg)"/>
+  <circle cx="970" cy="150" r="72" fill="#f9e79f" fill-opacity="0.9"/>
+  <polygon points="120,500 370,240 620,500" fill="#d5f5e3" fill-opacity="0.92"/>
+  <polygon points="360,500 620,210 900,500" fill="#abebc6" fill-opacity="0.9"/>
+  <polygon points="720,500 940,280 1110,500" fill="#82e0aa" fill-opacity="0.9"/>
+  <rect x="0" y="500" width="1200" height="200" fill="#239b56" fill-opacity="0.85"/>
+  <ellipse cx="200" cy="540" rx="140" ry="55" fill="#58d68d" fill-opacity="0.6"/>
+  <ellipse cx="520" cy="560" rx="190" ry="70" fill="#58d68d" fill-opacity="0.55"/>
+  <ellipse cx="880" cy="550" rx="170" ry="65" fill="#58d68d" fill-opacity="0.55"/>
+  <path d="M130 450C180 360 250 350 300 450C245 470 185 470 130 450Z" fill="#2ecc71"/>
+  <path d="M890 420C945 340 1010 340 1065 420C1010 440 945 440 890 420Z" fill="#2ecc71"/>
+  <text x="600" y="640" text-anchor="middle" font-family="Arial, sans-serif" font-size="64" font-weight="700" fill="#ffffff" fill-opacity="0.35">NATURE</text>
+</svg>
