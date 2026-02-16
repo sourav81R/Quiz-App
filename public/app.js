@@ -15,6 +15,8 @@ let currentQuestionIndex = 0;
 let score = 0;
 let userAnswers = [];
 let userProgress = {};
+let userManagedQuestions = [];
+let editingQuestionId = null;
 const QUIZ_CATEGORIES = ["General Knowledge", "Mathematics", "Politics", "Nature"];
 const QUESTIONS_PER_LEVEL = 10;
 const PASSING_SCORE = 8;
@@ -139,6 +141,28 @@ function handleLogout() {
 
     showAuthMessage("You have been logged out", "success");
   }
+}
+
+function handleUnauthorizedSession(message = "Session expired. Please login again.") {
+  localStorage.removeItem("authToken");
+  localStorage.removeItem("currentUser");
+  authToken = null;
+  currentUser = null;
+  userProgress = {};
+  userManagedQuestions = [];
+  editingQuestionId = null;
+
+  const loginScreen = document.getElementById("login-screen");
+  const startScreen = document.getElementById("start-screen");
+  const quizContainer = document.getElementById("quiz-container");
+  const resultScreen = document.getElementById("result-screen");
+
+  if (loginScreen) loginScreen.style.display = "block";
+  if (startScreen) startScreen.style.display = "none";
+  if (quizContainer) quizContainer.style.display = "none";
+  if (resultScreen) resultScreen.style.display = "none";
+
+  showAuthMessage(message, "error");
 }
 
 function showLogin() {
@@ -449,7 +473,13 @@ function finishQuiz() {
         "Authorization": `Bearer ${authToken}`
       },
       body: JSON.stringify({ score: score, quiz: currentQuiz, level: currentLevel })
-    }).catch(err => console.error("Error saving result:", err));
+    })
+      .then((res) => {
+        if (res.status === 401) {
+          handleUnauthorizedSession();
+        }
+      })
+      .catch((err) => console.error("Error saving result:", err));
   }
 
   // Play level up sound if score is 80% or higher
@@ -620,6 +650,10 @@ async function fetchProgress() {
     });
     if (res.ok) {
       userProgress = await res.json();
+      return;
+    }
+    if (res.status === 401) {
+      handleUnauthorizedSession();
     }
   } catch (err) {
     console.error("Error fetching progress:", err);
@@ -857,6 +891,7 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
     if (!startScreen) return;
 
     const categories = QUIZ_CATEGORIES;
+    const canManageHistory = Boolean(authToken && currentUser && currentUser.id);
 
     startScreen.innerHTML = `
       <div class="start-container">
@@ -875,6 +910,8 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
           `).join("")}
         </div>
 
+        <div id="leaderboard-actions" style="display:flex; justify-content:flex-end; margin: 0 10px 10px;"></div>
+
         <div class="leaderboard-list">
           ${data.length > 0 ? data.map((entry, i) => `
             <div class="leaderboard-item">
@@ -886,18 +923,172 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
             </div>
           `).join("") : "<p style='text-align:center;'>No scores yet. Be the first!</p>"}
         </div>
+        <p id="leaderboard-manage-note" style="margin: 5px 10px 0; font-size: 0.8rem; color: #777; text-align: right;"></p>
         <button onclick="renderStartScreen()" class="logout-btn" style="background: #b2bec3; width: 100%; margin-top: 20px;">Back to Menu</button>
       </div>
     `;
+
+    const actionsContainer = startScreen.querySelector("#leaderboard-actions");
+    const manageNote = startScreen.querySelector("#leaderboard-manage-note");
+    if (actionsContainer) {
+      if (canManageHistory) {
+        actionsContainer.innerHTML = `
+          <button
+            onclick="clearMyLeaderboardHistory('${escapeJs(quizFilter)}', '${escapeJs(searchTerm)}')"
+            class="logout-btn"
+            style="background:#ff7675; margin:0; padding:8px 14px; border-radius:10px; font-size:0.9rem;"
+          >
+            Clear My History
+          </button>
+        `;
+      } else {
+        actionsContainer.innerHTML = `
+          <button
+            class="logout-btn"
+            style="background:#d5d5d5; color:#666; margin:0; padding:8px 14px; border-radius:10px; font-size:0.9rem; cursor:not-allowed;"
+            disabled
+            title="Login required"
+          >
+            Clear My History
+          </button>
+        `;
+      }
+    }
+
+    if (manageNote) {
+      manageNote.textContent = canManageHistory
+        ? "You can delete only your own entries."
+        : "Login to manage your own history.";
+    }
+
+    const leaderboardList = startScreen.querySelector(".leaderboard-list");
+    if (leaderboardList) {
+      leaderboardList.innerHTML =
+        data.length > 0
+          ? data
+              .map((entry, i) => {
+                const canDelete =
+                  canManageHistory &&
+                  entry &&
+                  entry._id &&
+                  ((entry.userId && String(entry.userId) === String(currentUser.id)) ||
+                    (!entry.userId && entry.username === currentUser.name));
+
+                return `
+                  <div class="leaderboard-item">
+                    <span class="rank">${i + 1}. ${escapeHtml(entry.username)}</span>
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <div style="display: flex; flex-direction: column; align-items: flex-end;">
+                        <span class="score">${entry.score} pts</span>
+                        ${!quizFilter ? `<small style="font-size: 0.7rem; color: #888;">${escapeHtml(entry.quiz)}</small>` : ""}
+                      </div>
+                      ${
+                        canDelete
+                          ? `<button
+                              onclick="deleteLeaderboardEntry('${escapeJs(String(entry._id))}', '${escapeJs(quizFilter)}', '${escapeJs(searchTerm)}')"
+                              style="margin:0; padding:6px 10px; font-size:0.8rem; background:#ff6b6b; color:white; border:none; border-radius:8px;"
+                            >
+                              Delete
+                            </button>`
+                          : ""
+                      }
+                    </div>
+                  </div>
+                `;
+              })
+              .join("")
+          : "<p style='text-align:center;'>No scores yet. Be the first!</p>";
+    }
   } catch (err) {
     console.error("Leaderboard error:", err);
     alert("Failed to load leaderboard.");
   }
 }
 
+async function clearMyLeaderboardHistory(quizFilter = "", searchTerm = "") {
+  if (!authToken) {
+    alert("Please login to manage history.");
+    return;
+  }
+
+  if (!confirm("Delete all of your quiz history?")) {
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/results", {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+      alert(data.error || "Failed to clear history.");
+      return;
+    }
+
+    alert(`Deleted ${data.deletedCount || 0} record(s).`);
+    showLeaderboard(quizFilter, searchTerm);
+  } catch (err) {
+    console.error("Clear history error:", err);
+    alert("Failed to clear history.");
+  }
+}
+
+async function deleteLeaderboardEntry(resultId, quizFilter = "", searchTerm = "") {
+  if (!authToken) {
+    alert("Please login to manage history.");
+    return;
+  }
+
+  if (!resultId) {
+    alert("Invalid result id.");
+    return;
+  }
+
+  if (!confirm("Delete this entry?")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/results/${encodeURIComponent(resultId)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+      alert(data.error || "Failed to delete entry.");
+      return;
+    }
+
+    showLeaderboard(quizFilter, searchTerm);
+  } catch (err) {
+    console.error("Delete entry error:", err);
+    alert("Failed to delete entry.");
+  }
+}
+
 function renderAddQuestionScreen() {
   const startScreen = document.getElementById("start-screen");
   if (!startScreen) return;
+
+  if (!authToken) {
+    alert("Please login to add or manage questions.");
+    return;
+  }
 
   startScreen.innerHTML = `
     <div class="start-container">
@@ -923,11 +1114,176 @@ function renderAddQuestionScreen() {
           <label>Level (1, 2, 3...)</label>
           <input type="number" id="new-level" value="1" min="1" required>
         </div>
-        <button onclick="submitNewQuestion()" class="logout-btn" style="background: #6c5ce7; width: 100%; margin: 10px 0;">Save Question</button>
+        <button id="question-submit-btn" onclick="submitNewQuestion()" class="logout-btn" style="background: #6c5ce7; width: 100%; margin: 10px 0;">Save Question</button>
+        <button id="cancel-edit-btn" onclick="cancelQuestionEdit()" class="logout-btn" style="display:none; background: #f39c12; width: 100%; margin: 0 0 10px 0;">Cancel Edit</button>
         <button onclick="renderStartScreen()" class="logout-btn" style="background: #b2bec3; width: 100%; margin: 0;">Back to Menu</button>
       </div>
+      <hr style="margin: 22px 0; border: none; border-top: 1px solid #e6e6e6;">
+      <h2 style="margin: 0 0 8px;">Your Questions</h2>
+      <p style="margin: 0 0 14px; color: #666; text-align: center;">You can edit or delete only questions created by you.</p>
+      <div id="user-questions-list" style="display:flex; flex-direction:column; gap:12px;"></div>
     </div>
   `;
+
+  cancelQuestionEdit();
+  loadManagedQuestions();
+}
+
+function cancelQuestionEdit() {
+  editingQuestionId = null;
+
+  const quizInput = document.getElementById("new-quiz-name");
+  const questionInput = document.getElementById("new-question-text");
+  const optionsInput = document.getElementById("new-options");
+  const answerInput = document.getElementById("new-answer");
+  const levelInput = document.getElementById("new-level");
+  const submitBtn = document.getElementById("question-submit-btn");
+  const cancelBtn = document.getElementById("cancel-edit-btn");
+
+  if (quizInput) quizInput.value = "";
+  if (questionInput) questionInput.value = "";
+  if (optionsInput) optionsInput.value = "";
+  if (answerInput) answerInput.value = "";
+  if (levelInput) levelInput.value = "1";
+  if (submitBtn) submitBtn.textContent = "Save Question";
+  if (cancelBtn) cancelBtn.style.display = "none";
+}
+
+async function loadManagedQuestions() {
+  const listContainer = document.getElementById("user-questions-list");
+  if (!listContainer) return;
+
+  listContainer.innerHTML = `<p style="text-align:center; color:#666;">Loading your questions...</p>`;
+
+  try {
+    const res = await fetch("/api/questions", {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+      listContainer.innerHTML = `<p style="text-align:center; color:#c0392b;">${escapeHtml(data.error || "Failed to load your questions.")}</p>`;
+      return;
+    }
+
+    userManagedQuestions = Array.isArray(data) ? data : [];
+    renderManagedQuestionsList();
+  } catch (err) {
+    console.error("Error loading managed questions:", err);
+    listContainer.innerHTML = `<p style="text-align:center; color:#c0392b;">Failed to load your questions.</p>`;
+  }
+}
+
+function renderManagedQuestionsList() {
+  const listContainer = document.getElementById("user-questions-list");
+  if (!listContainer) return;
+
+  if (!userManagedQuestions.length) {
+    listContainer.innerHTML = `<p style="text-align:center; color:#666;">No questions added by you yet.</p>`;
+    return;
+  }
+
+  listContainer.innerHTML = userManagedQuestions
+    .map((q, i) => {
+      const id = String(q._id || "");
+      const optionsText = Array.isArray(q.options) ? q.options.join(", ") : "";
+      return `
+      <div style="border:1px solid #e1e1e1; border-radius:10px; padding:12px; background:#fff;">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+          <div style="text-align:left;">
+            <p style="margin:0 0 4px; font-weight:700; color:#2d3436;">${i + 1}. ${escapeHtml(q.question || "")}</p>
+            <p style="margin:0 0 4px; color:#555;"><strong>Quiz:</strong> ${escapeHtml(q.quiz || "")} | <strong>Level:</strong> ${escapeHtml(q.level || 1)}</p>
+            <p style="margin:0 0 4px; color:#555;"><strong>Options:</strong> ${escapeHtml(optionsText)}</p>
+            <p style="margin:0; color:#16a085;"><strong>Answer:</strong> ${escapeHtml(q.answer || "")}</p>
+          </div>
+          <div style="display:flex; gap:8px; flex-shrink:0;">
+            <button onclick="startQuestionEdit('${escapeJs(id)}')" style="margin:0; background:#6c5ce7; color:white; padding:7px 12px; border:none; border-radius:8px;">Edit</button>
+            <button onclick="deleteManagedQuestion('${escapeJs(id)}')" style="margin:0; background:#e74c3c; color:white; padding:7px 12px; border:none; border-radius:8px;">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+function startQuestionEdit(questionId) {
+  const targetQuestion = userManagedQuestions.find((q) => String(q._id) === String(questionId));
+  if (!targetQuestion) {
+    alert("Question not found.");
+    return;
+  }
+
+  editingQuestionId = String(targetQuestion._id);
+
+  const quizInput = document.getElementById("new-quiz-name");
+  const questionInput = document.getElementById("new-question-text");
+  const optionsInput = document.getElementById("new-options");
+  const answerInput = document.getElementById("new-answer");
+  const levelInput = document.getElementById("new-level");
+  const submitBtn = document.getElementById("question-submit-btn");
+  const cancelBtn = document.getElementById("cancel-edit-btn");
+
+  if (quizInput) quizInput.value = targetQuestion.quiz || "";
+  if (questionInput) questionInput.value = targetQuestion.question || "";
+  if (optionsInput) optionsInput.value = Array.isArray(targetQuestion.options) ? targetQuestion.options.join(", ") : "";
+  if (answerInput) answerInput.value = targetQuestion.answer || "";
+  if (levelInput) levelInput.value = String(targetQuestion.level || 1);
+  if (submitBtn) submitBtn.textContent = "Update Question";
+  if (cancelBtn) cancelBtn.style.display = "inline-block";
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function deleteManagedQuestion(questionId) {
+  if (!authToken) {
+    alert("Please login to delete questions.");
+    return;
+  }
+
+  if (!questionId) {
+    alert("Invalid question id.");
+    return;
+  }
+
+  if (!confirm("Delete this question?")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/questions/${encodeURIComponent(questionId)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
+      alert(data.error || "Failed to delete question.");
+      return;
+    }
+
+    if (editingQuestionId === questionId) {
+      cancelQuestionEdit();
+    }
+
+    await loadManagedQuestions();
+  } catch (err) {
+    console.error("Error deleting question:", err);
+    alert("Failed to delete question.");
+  }
 }
 
 async function submitNewQuestion() {
@@ -955,8 +1311,13 @@ async function submitNewQuestion() {
   }
 
   try {
-    const res = await fetch("/api/questions", {
-      method: "POST",
+    const endpoint = editingQuestionId
+      ? `/api/questions/${encodeURIComponent(editingQuestionId)}`
+      : "/api/questions";
+    const method = editingQuestionId ? "PUT" : "POST";
+
+    const res = await fetch(endpoint, {
+      method,
       headers: { 
         "Content-Type": "application/json",
         "Authorization": `Bearer ${authToken}`
@@ -964,13 +1325,19 @@ async function submitNewQuestion() {
       body: JSON.stringify({ quiz, question, options, answer, level })
     });
 
-    if (res.ok) {
-      alert("Question added successfully!");
-      renderStartScreen();
-    } else {
-      const data = await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      if (res.status === 401) {
+        handleUnauthorizedSession();
+        return;
+      }
       alert(data.error || "Failed to add question.");
+      return;
     }
+
+    alert(editingQuestionId ? "Question updated successfully!" : "Question added successfully!");
+    cancelQuestionEdit();
+    await loadManagedQuestions();
   } catch (err) {
     console.error("Error:", err);
     alert("An error occurred while saving the question.");

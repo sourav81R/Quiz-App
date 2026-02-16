@@ -1,9 +1,11 @@
 import mongoose from "mongoose";
 
 const ResultSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   username: String,
   score: Number,
   quiz: String,
+  level: { type: Number, default: 1 },
   date: { type: Date, default: Date.now }
 });
 

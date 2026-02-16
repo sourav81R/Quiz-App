@@ -72,6 +72,24 @@ const normalizeQuestionRecord = (record = {}) => {
   };
 };
 
+const normalizeQuestionPayload = (payload = {}) => {
+  const quiz = normalizeQuizName(payload.quiz);
+  const question = String(payload.question || "").trim();
+  const answer = String(payload.answer || "").trim();
+  const options = Array.isArray(payload.options)
+    ? payload.options.map((opt) => String(opt || "").trim()).filter(Boolean)
+    : [];
+  const level = normalizeLevel(payload.level, 1);
+
+  return {
+    quiz,
+    question,
+    answer,
+    options,
+    level,
+  };
+};
+
 const loadFallbackQuestions = () => {
   const candidateFiles = [
     path.join(__dirname, "public", "question.json"),
@@ -123,10 +141,38 @@ let mongoConnectPromise = null;
 const isDatabaseReady = () => mongoose.connection.readyState === 1;
 
 const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-const mongoUri = normalizeMongoUri(rawMongoUri);
+const primaryMongoUri = normalizeMongoUri(rawMongoUri);
+const allowLocalMongoFallback = process.env.ALLOW_LOCAL_MONGO_FALLBACK !== "false";
+const localFallbackMongoUri = normalizeMongoUri(
+  process.env.LOCAL_MONGODB_URI || "mongodb://127.0.0.1:27017/quizApp"
+);
+let activeMongoUri = primaryMongoUri || (allowLocalMongoFallback ? localFallbackMongoUri : "");
+let usingLocalMongoFallback = !primaryMongoUri && activeMongoUri === localFallbackMongoUri;
+
+const connectMongoWithUri = async (uri) => {
+  if (!uri) {
+    return false;
+  }
+
+  console.log(`Connecting to MongoDB: ${maskMongoUri(uri)}`);
+  try {
+    await mongoose.connect(uri, {
+      serverSelectionTimeoutMS: 10000,
+      socketTimeoutMS: 45000,
+      family: 4,
+    });
+    mongoConnected = true;
+    console.log("MongoDB connected");
+    return true;
+  } catch (err) {
+    mongoConnected = false;
+    console.error("MongoDB Connection Error:", formatMongoError(err));
+    return false;
+  }
+};
 
 const ensureMongoConnection = async () => {
-  if (!mongoUri) {
+  if (!activeMongoUri) {
     mongoConnected = false;
     return false;
   }
@@ -140,32 +186,38 @@ const ensureMongoConnection = async () => {
     return mongoConnectPromise;
   }
 
-  console.log(`Connecting to MongoDB: ${maskMongoUri(mongoUri)}`);
-  mongoConnectPromise = mongoose
-    .connect(mongoUri, {
-      serverSelectionTimeoutMS: 10000,
-      socketTimeoutMS: 45000,
-      family: 4,
-    })
-    .then(() => {
-      mongoConnected = true;
-      console.log("MongoDB connected");
+  mongoConnectPromise = (async () => {
+    const connected = await connectMongoWithUri(activeMongoUri);
+    if (connected) {
       return true;
-    })
-    .catch((err) => {
-      mongoConnected = false;
-      console.error("MongoDB Connection Error:", formatMongoError(err));
-      return false;
-    })
-    .finally(() => {
-      mongoConnectPromise = null;
-    });
+    }
+
+    if (
+      !usingLocalMongoFallback &&
+      allowLocalMongoFallback &&
+      localFallbackMongoUri &&
+      localFallbackMongoUri !== activeMongoUri
+    ) {
+      usingLocalMongoFallback = true;
+      activeMongoUri = localFallbackMongoUri;
+      console.warn("Primary MongoDB unavailable. Falling back to local MongoDB.");
+      return connectMongoWithUri(activeMongoUri);
+    }
+
+    return false;
+  })().finally(() => {
+    mongoConnectPromise = null;
+  });
 
   return mongoConnectPromise;
 };
 
-if (!mongoUri) {
-  console.warn("Warning: MONGODB_URI or MONGO_URI is missing. Running in fallback mode.");
+if (!primaryMongoUri) {
+  if (allowLocalMongoFallback && localFallbackMongoUri) {
+    console.warn("Warning: MONGODB_URI or MONGO_URI is missing. Trying local MongoDB fallback.");
+  } else {
+    console.warn("Warning: MongoDB URI missing and local fallback disabled. Running in question fallback mode.");
+  }
 } else {
   void ensureMongoConnection();
 }
@@ -286,6 +338,20 @@ app.post("/api/auth/login", async (req, res) => {
 });
 
 // ==================== QUIZ ROUTES ====================
+app.get("/api/questions", authMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database is not connected. Cannot fetch your questions." });
+    }
+
+    const userQuestions = await Question.find({ userId: req.userId }).sort({ _id: -1 });
+    res.json(userQuestions);
+  } catch (err) {
+    console.error("Error fetching user questions:", err);
+    res.status(500).json({ error: "Failed to fetch your questions" });
+  }
+});
+
 app.get("/api/questions/:quizName", async (req, res) => {
   const requestedQuiz = normalizeQuizName(req.params.quizName);
   const requestedLevel = normalizeLevel(req.query.level, 1);
@@ -325,16 +391,14 @@ app.get("/api/questions/:quizName", async (req, res) => {
 
 app.post("/api/questions", authMiddleware, async (req, res) => {
   try {
-    const { quiz, question, options, answer, level } = req.body;
-    const normalizedQuiz = normalizeQuizName(quiz);
-    const normalizedQuestion = String(question || "").trim();
-    const normalizedAnswer = String(answer || "").trim();
-    const normalizedOptions = Array.isArray(options)
-      ? options.map((opt) => String(opt || "").trim()).filter(Boolean)
-      : [];
-    const normalizedQuestionLevel = normalizeLevel(level, 1);
+    const normalizedPayload = normalizeQuestionPayload(req.body);
 
-    if (!normalizedQuiz || !normalizedQuestion || normalizedOptions.length < 2 || !normalizedAnswer) {
+    if (
+      !normalizedPayload.quiz ||
+      !normalizedPayload.question ||
+      normalizedPayload.options.length < 2 ||
+      !normalizedPayload.answer
+    ) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
@@ -342,27 +406,114 @@ app.post("/api/questions", authMiddleware, async (req, res) => {
       return res.status(503).json({ error: "Database is not connected. Cannot add question." });
     }
     const newQuestion = new Question({
-      quiz: normalizedQuiz,
-      question: normalizedQuestion,
-      options: normalizedOptions,
-      answer: normalizedAnswer,
-      level: normalizedQuestionLevel,
+      userId: req.userId,
+      quiz: normalizedPayload.quiz,
+      question: normalizedPayload.question,
+      options: normalizedPayload.options,
+      answer: normalizedPayload.answer,
+      level: normalizedPayload.level,
     });
     await newQuestion.save();
 
     // Also update in-memory data so it's available immediately/in fallback mode
     questionsData.push({
-      quiz: normalizedQuiz,
-      question: normalizedQuestion,
-      options: normalizedOptions,
-      answer: normalizedAnswer,
-      level: normalizedQuestionLevel,
+      _id: String(newQuestion._id),
+      userId: req.userId,
+      quiz: normalizedPayload.quiz,
+      question: normalizedPayload.question,
+      options: normalizedPayload.options,
+      answer: normalizedPayload.answer,
+      level: normalizedPayload.level,
     });
 
-    res.status(201).json({ message: "Question added successfully" });
+    res.status(201).json({ message: "Question added successfully", question: newQuestion });
   } catch (err) {
     console.error("Error adding question:", err);
     res.status(500).json({ error: "Failed to add question" });
+  }
+});
+
+app.put("/api/questions/:questionId", authMiddleware, async (req, res) => {
+  try {
+    const normalizedPayload = normalizeQuestionPayload(req.body);
+    if (
+      !normalizedPayload.quiz ||
+      !normalizedPayload.question ||
+      normalizedPayload.options.length < 2 ||
+      !normalizedPayload.answer
+    ) {
+      return res.status(400).json({ error: "All fields are required" });
+    }
+
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database is not connected. Cannot update question." });
+    }
+
+    const questionToUpdate = await Question.findById(req.params.questionId);
+    if (!questionToUpdate) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    if (String(questionToUpdate.userId || "") !== String(req.userId)) {
+      return res.status(403).json({ error: "You can only edit your own questions" });
+    }
+
+    questionToUpdate.quiz = normalizedPayload.quiz;
+    questionToUpdate.question = normalizedPayload.question;
+    questionToUpdate.options = normalizedPayload.options;
+    questionToUpdate.answer = normalizedPayload.answer;
+    questionToUpdate.level = normalizedPayload.level;
+    await questionToUpdate.save();
+
+    questionsData = questionsData.map((q) => {
+      if (String(q._id || "") !== String(questionToUpdate._id)) {
+        return q;
+      }
+      return {
+        ...q,
+        quiz: normalizedPayload.quiz,
+        question: normalizedPayload.question,
+        options: normalizedPayload.options,
+        answer: normalizedPayload.answer,
+        level: normalizedPayload.level,
+      };
+    });
+
+    res.json({ message: "Question updated successfully", question: questionToUpdate });
+  } catch (err) {
+    if (err && err.name === "CastError") {
+      return res.status(400).json({ error: "Invalid question id" });
+    }
+    console.error("Error updating question:", err);
+    res.status(500).json({ error: "Failed to update question" });
+  }
+});
+
+app.delete("/api/questions/:questionId", authMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database is not connected. Cannot delete question." });
+    }
+
+    const questionToDelete = await Question.findById(req.params.questionId);
+    if (!questionToDelete) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    if (String(questionToDelete.userId || "") !== String(req.userId)) {
+      return res.status(403).json({ error: "You can only delete your own questions" });
+    }
+
+    await Question.deleteOne({ _id: questionToDelete._id });
+    questionsData = questionsData.filter((q) => String(q._id || "") !== String(questionToDelete._id));
+
+    res.json({ message: "Question deleted successfully" });
+  } catch (err) {
+    if (err && err.name === "CastError") {
+      return res.status(400).json({ error: "Invalid question id" });
+    }
+    console.error("Error deleting question:", err);
+    res.status(500).json({ error: "Failed to delete question" });
   }
 });
 
@@ -381,6 +532,7 @@ app.post("/api/results", authMiddleware, async (req, res) => {
     }
 
     const newResult = new Result({
+      userId: req.userId,
       username: user.name,
       score,
       quiz,
@@ -390,6 +542,73 @@ app.post("/api/results", authMiddleware, async (req, res) => {
     res.status(201).json({ message: "Result saved successfully" });
   } catch (err) {
     res.status(500).json({ error: "Failed to save result" });
+  }
+});
+
+app.delete("/api/results/:resultId", authMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot delete result." });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const result = await Result.findById(req.params.resultId);
+    if (!result) {
+      return res.status(404).json({ error: "Result not found" });
+    }
+
+    const belongsToUser =
+      (result.userId && String(result.userId) === String(req.userId)) ||
+      (!result.userId && result.username === user.name);
+
+    if (!belongsToUser) {
+      return res.status(403).json({ error: "You can only delete your own result" });
+    }
+
+    await Result.deleteOne({ _id: result._id });
+    res.json({ message: "Result deleted successfully" });
+  } catch (err) {
+    if (err && err.name === "CastError") {
+      return res.status(400).json({ error: "Invalid result id" });
+    }
+    res.status(500).json({ error: "Failed to delete result" });
+  }
+});
+
+app.delete("/api/results", authMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot clear history." });
+    }
+
+    const user = await User.findById(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const ownershipFilter = {
+      $or: [
+        { userId: req.userId },
+        { userId: { $exists: false }, username: user.name },
+        { userId: null, username: user.name },
+      ],
+    };
+
+    if (req.query.quiz) {
+      ownershipFilter.quiz = String(req.query.quiz).trim();
+    }
+
+    const result = await Result.deleteMany(ownershipFilter);
+    res.json({
+      message: "History cleared successfully",
+      deletedCount: result.deletedCount || 0,
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to clear history" });
   }
 });
 
@@ -405,7 +624,14 @@ app.get("/api/user/progress", authMiddleware, async (req, res) => {
     }
 
     // Find max level reached for each quiz where score was 8 or more
-    const results = await Result.find({ username: user.name, score: { $gte: 8 } });
+    const results = await Result.find({
+      score: { $gte: 8 },
+      $or: [
+        { userId: req.userId },
+        { userId: { $exists: false }, username: user.name },
+        { userId: null, username: user.name },
+      ],
+    });
 
     const progress = {};
     results.forEach((r) => {
