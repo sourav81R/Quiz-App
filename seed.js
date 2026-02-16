@@ -2,12 +2,11 @@
 
 import dotenv from "dotenv";
 import mongoose from "mongoose";
-import { normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
+import { resolveMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
 
 dotenv.config();
 
-const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-const mongoUri = normalizeMongoUri(rawMongoUri);
+const mongoUri = resolveMongoUri(process.env);
 
 if (!mongoUri) {
   console.error("Missing MONGODB_URI or MONGO_URI in .env");

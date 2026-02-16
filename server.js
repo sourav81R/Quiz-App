@@ -6,7 +6,7 @@ import fs from "fs";
 import path from "path";
 import jwt from "jsonwebtoken";
 import { fileURLToPath } from "url";
-import { normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
+import { resolveMongoUri, normalizeMongoUri, maskMongoUri, formatMongoError } from "./mongoUri.js";
 import User from "./models/User.js";
 import Question from "./models/Question.js";
 import Result from "./models/Result.js";
@@ -142,8 +142,7 @@ let lastMongoConnectError = "";
 let lastMongoFailureAt = 0;
 const isDatabaseReady = () => mongoose.connection.readyState === 1;
 
-const rawMongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-const primaryMongoUri = normalizeMongoUri(rawMongoUri);
+const primaryMongoUri = resolveMongoUri(process.env);
 const isProductionRuntime = process.env.NODE_ENV === "production" || process.env.VERCEL === "1";
 const allowLocalMongoFallback =
   process.env.ALLOW_LOCAL_MONGO_FALLBACK != null

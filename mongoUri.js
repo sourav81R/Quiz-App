@@ -1,9 +1,32 @@
+function sanitizeEnvValue(rawValue) {
+  if (rawValue == null) {
+    return "";
+  }
+
+  let value = String(rawValue).trim();
+  if (!value) {
+    return "";
+  }
+
+  const hasMatchingDoubleQuotes = value.startsWith('"') && value.endsWith('"');
+  const hasMatchingSingleQuotes = value.startsWith("'") && value.endsWith("'");
+  if (hasMatchingDoubleQuotes || hasMatchingSingleQuotes) {
+    value = value.slice(1, -1).trim();
+  }
+
+  return value;
+}
+
 function normalizeMongoUri(rawUri) {
   if (!rawUri || typeof rawUri !== "string") {
     return "";
   }
 
-  const uri = rawUri.trim();
+  const uri = sanitizeEnvValue(rawUri);
+  if (!uri) {
+    return "";
+  }
+
   if (uri.startsWith("mongodb+srv://")) {
     return uri;
   }
@@ -42,6 +65,36 @@ function normalizeMongoUri(rawUri) {
   return `mongodb://${username}:${password}@${hosts}/${database}?${params.toString()}`;
 }
 
+function resolveMongoUri(env = process.env) {
+  let uri = sanitizeEnvValue(
+    env.MONGODB_URI_DIRECT ||
+      env.MONGODB_URI_NO_SRV ||
+      env.MONGODB_URI_NOSRV ||
+      env.MONGODB_URI ||
+      env.MONGO_URI
+  );
+  const username = sanitizeEnvValue(
+    env.MONGODB_USERNAME || env.MONGO_USERNAME || env.DB_USERNAME
+  );
+  const password = sanitizeEnvValue(
+    env.MONGODB_PASSWORD || env.MONGO_PASSWORD || env.DB_PASSWORD
+  );
+
+  if (uri.includes("<db_username>") && username) {
+    uri = uri.replaceAll("<db_username>", encodeURIComponent(username));
+  }
+  if (uri.includes("<db_password>") && password) {
+    uri = uri.replaceAll("<db_password>", encodeURIComponent(password));
+  }
+
+  // Template placeholders left unresolved -> treat as missing URI
+  if (uri.includes("<db_username>") || uri.includes("<db_password>")) {
+    return "";
+  }
+
+  return normalizeMongoUri(uri);
+}
+
 function maskMongoUri(uri) {
   if (!uri) {
     return "(missing MongoDB URI)";
@@ -73,4 +126,4 @@ function formatMongoError(err) {
   return `${err.message || "MongoDB connection failed"} | ${details.join(" | ")}`;
 }
 
-export { normalizeMongoUri, maskMongoUri, formatMongoError };
+export { sanitizeEnvValue, normalizeMongoUri, resolveMongoUri, maskMongoUri, formatMongoError };
