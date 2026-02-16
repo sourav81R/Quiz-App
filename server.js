@@ -43,11 +43,43 @@ const authMiddleware = (req, res, next) => {
 };
 
 // In-memory questions database (fallback if MongoDB fails)
+const normalizeQuizName = (value) => String(value || "").trim();
+
+const normalizeLevel = (value, fallback = 1) => {
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) || parsed < 1 ? fallback : parsed;
+};
+
+const normalizeQuestionRecord = (record = {}) => {
+  const quiz = normalizeQuizName(record.quiz);
+  const question = String(record.question || "").trim();
+  const options = Array.isArray(record.options)
+    ? record.options.map((opt) => String(opt || "").trim()).filter(Boolean)
+    : [];
+  const answer = String(record.answer || "").trim();
+
+  if (!quiz || !question || options.length < 2 || !answer) {
+    return null;
+  }
+
+  return {
+    ...record,
+    quiz,
+    question,
+    options,
+    answer,
+    level: normalizeLevel(record.level, 1),
+  };
+};
+
 const loadFallbackQuestions = () => {
   const candidateFiles = [
+    path.join(__dirname, "public", "question.json"),
     path.join(__dirname, "questions.json"),
     path.join(__dirname, "data", "questions.json"),
   ];
+  const mergedQuestions = [];
+  const seen = new Set();
 
   for (const filePath of candidateFiles) {
     if (!fs.existsSync(filePath)) {
@@ -57,11 +89,28 @@ const loadFallbackQuestions = () => {
     try {
       const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
       if (Array.isArray(parsed)) {
-        return parsed;
+        parsed.forEach((question) => {
+          const normalized = normalizeQuestionRecord(question);
+          if (!normalized) {
+            return;
+          }
+
+          const dedupeKey = `${normalized.quiz.toLowerCase()}|${normalized.level}|${normalized.question.toLowerCase()}`;
+          if (seen.has(dedupeKey)) {
+            return;
+          }
+
+          seen.add(dedupeKey);
+          mergedQuestions.push(normalized);
+        });
       }
     } catch (err) {
       console.warn(`Warning: failed to parse fallback questions at ${filePath}`);
     }
+  }
+
+  if (mergedQuestions.length > 0) {
+    return mergedQuestions;
   }
 
   console.warn("Warning: questions.json not found. Fallback data empty.");
@@ -238,12 +287,22 @@ app.post("/api/auth/login", async (req, res) => {
 
 // ==================== QUIZ ROUTES ====================
 app.get("/api/questions/:quizName", async (req, res) => {
-  try {
-    const requestedLevel = parseInt(req.query.level, 10) || 1;
+  const requestedQuiz = normalizeQuizName(req.params.quizName);
+  const requestedLevel = normalizeLevel(req.query.level, 1);
 
+  if (!requestedQuiz) {
+    return res.status(400).json({ error: "Quiz name is required" });
+  }
+
+  const normalizeForMatch = (value) => normalizeQuizName(value).toLowerCase();
+
+  try {
     // Try database first; fallback to in-memory if not available
     if (await ensureMongoConnection()) {
-      const questions = await Question.find({ quiz: req.params.quizName, level: requestedLevel });
+      const questions = await Question.find({
+        quiz: { $regex: `^${requestedQuiz.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, $options: "i" },
+        level: requestedLevel,
+      });
       if (questions && questions.length > 0) {
         return res.json(questions);
       }
@@ -251,14 +310,14 @@ app.get("/api/questions/:quizName", async (req, res) => {
 
     // Otherwise, use in-memory data
     const questions = questionsData.filter(
-      (q) => q.quiz === req.params.quizName && (q.level || 1) === requestedLevel
+      (q) => normalizeForMatch(q.quiz) === normalizeForMatch(requestedQuiz) && (q.level || 1) === requestedLevel
     );
     res.json(questions);
   } catch (err) {
     console.error("Error fetching questions:", err);
     // Fallback to in-memory data on any error
     const questions = questionsData.filter(
-      (q) => q.quiz === req.params.quizName && (q.level || 1) === (parseInt(req.query.level, 10) || 1)
+      (q) => normalizeForMatch(q.quiz) === normalizeForMatch(requestedQuiz) && (q.level || 1) === requestedLevel
     );
     res.json(questions);
   }
@@ -267,19 +326,38 @@ app.get("/api/questions/:quizName", async (req, res) => {
 app.post("/api/questions", authMiddleware, async (req, res) => {
   try {
     const { quiz, question, options, answer, level } = req.body;
+    const normalizedQuiz = normalizeQuizName(quiz);
+    const normalizedQuestion = String(question || "").trim();
+    const normalizedAnswer = String(answer || "").trim();
+    const normalizedOptions = Array.isArray(options)
+      ? options.map((opt) => String(opt || "").trim()).filter(Boolean)
+      : [];
+    const normalizedQuestionLevel = normalizeLevel(level, 1);
 
-    if (!quiz || !question || !options || !answer) {
+    if (!normalizedQuiz || !normalizedQuestion || normalizedOptions.length < 2 || !normalizedAnswer) {
       return res.status(400).json({ error: "All fields are required" });
     }
 
     if (!(await ensureMongoConnection())) {
       return res.status(503).json({ error: "Database is not connected. Cannot add question." });
     }
-    const newQuestion = new Question({ quiz, question, options, answer, level: level || 1 });
+    const newQuestion = new Question({
+      quiz: normalizedQuiz,
+      question: normalizedQuestion,
+      options: normalizedOptions,
+      answer: normalizedAnswer,
+      level: normalizedQuestionLevel,
+    });
     await newQuestion.save();
 
     // Also update in-memory data so it's available immediately/in fallback mode
-    questionsData.push({ quiz, question, options, answer, level: level || 1 });
+    questionsData.push({
+      quiz: normalizedQuiz,
+      question: normalizedQuestion,
+      options: normalizedOptions,
+      answer: normalizedAnswer,
+      level: normalizedQuestionLevel,
+    });
 
     res.status(201).json({ message: "Question added successfully" });
   } catch (err) {
@@ -369,8 +447,28 @@ app.get("*", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
-});
+// Start server with port fallback (avoids crashing on EADDRINUSE)
+const basePort = parseInt(process.env.PORT, 10) || 5000;
+const maxPortAttempts = 10;
+
+const startServer = (port, attempt = 0) => {
+  const server = app.listen(port);
+
+  server.once("listening", () => {
+    console.log(`Server running at http://localhost:${port}`);
+  });
+
+  server.once("error", (err) => {
+    if (err.code === "EADDRINUSE" && attempt < maxPortAttempts) {
+      const nextPort = port + 1;
+      console.warn(`Port ${port} is in use. Retrying on port ${nextPort}...`);
+      startServer(nextPort, attempt + 1);
+      return;
+    }
+
+    console.error("Failed to start server:", err.message || err);
+    process.exit(1);
+  });
+};
+
+startServer(basePort);

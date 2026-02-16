@@ -243,7 +243,7 @@ button:hover {
   margin: 0 auto;
 }
 
-#quiz-buttons button {
+#quiz-buttons > button {
   background: white;
   color: #4a4a4a;
   height: 140px;
@@ -259,17 +259,17 @@ button:hover {
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
 
-#quiz-buttons button:hover {
+#quiz-buttons > button:hover {
   transform: translateY(-8px) scale(1.02);
   box-shadow: 0 20px 40px rgba(0,0,0,0.2);
   color: #667eea;
 }
 
 /* Icons for quiz categories */
-#quiz-buttons button:nth-child(1)::before { content: "🌍"; font-size: 2.5rem; }
-#quiz-buttons button:nth-child(2)::before { content: "📐"; font-size: 2.5rem; }
-#quiz-buttons button:nth-child(3)::before { content: "🏛️"; font-size: 2.5rem; }
-#quiz-buttons button:nth-child(4)::before { content: "🌿"; font-size: 2.5rem; }
+#quiz-buttons > button:nth-child(1)::before { content: "🌍"; font-size: 2.5rem; }
+#quiz-buttons > button:nth-child(2)::before { content: "📐"; font-size: 2.5rem; }
+#quiz-buttons > button:nth-child(3)::before { content: "🏛️"; font-size: 2.5rem; }
+#quiz-buttons > button:nth-child(4)::before { content: "🌿"; font-size: 2.5rem; }
 
 /* ===== Quiz Container ===== */
 #quiz-container {
@@ -579,3 +579,4 @@ button:hover {
   font-size: 0.95rem;
   outline: none;
 }
+

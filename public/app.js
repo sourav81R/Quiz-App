@@ -15,6 +15,9 @@ let currentQuestionIndex = 0;
 let score = 0;
 let userAnswers = [];
 let userProgress = {};
+const QUIZ_CATEGORIES = ["General Knowledge", "Mathematics", "Politics", "Nature"];
+const QUESTIONS_PER_LEVEL = 10;
+const PASSING_SCORE = 8;
 
 let timerInterval = null;
 let timeLeft = 10;
@@ -118,6 +121,7 @@ function handleLogout() {
     currentQuestionIndex = 0;
     score = 0;
     userAnswers = [];
+    userProgress = {};
 
     // Show login screen
     document.getElementById("login-screen").style.display = "block";
@@ -213,7 +217,29 @@ function speak(text, callback) {
 }
 
 // ================== LOAD QUIZ ==================
+function getMaxPassedLevel(quizName) {
+  return parseInt(userProgress[quizName], 10) || 0;
+}
+
+function isLevelUnlocked(quizName, level) {
+  if (level <= 1) return true;
+  return getMaxPassedLevel(quizName) >= level - 1;
+}
+
+function startLevelQuiz(quizName, level) {
+  if (!isLevelUnlocked(quizName, level)) {
+    alert(`Level ${level} is locked. Score ${PASSING_SCORE}/${QUESTIONS_PER_LEVEL} in Level ${level - 1} to unlock it.`);
+    return;
+  }
+  loadQuiz(quizName, level);
+}
+
 async function loadQuiz(quizName, level = 1) {
+  if (!isLevelUnlocked(quizName, level)) {
+    alert(`Level ${level} is locked for ${quizName}.`);
+    return;
+  }
+
   currentQuiz = quizName;
   currentLevel = level;
   currentQuestionIndex = 0;
@@ -224,14 +250,23 @@ async function loadQuiz(quizName, level = 1) {
     const res = await fetch(`/api/questions/${encodeURIComponent(quizName)}?level=${level}`);
     questions = await res.json();
 
-    if (!questions || !questions.length) {
-      alert("No questions found for " + quizName);
+    if (!Array.isArray(questions) || !questions.length) {
+      alert(`No questions found for ${quizName} Level ${level}.`);
       return;
     }
 
+    if (questions.length < QUESTIONS_PER_LEVEL) {
+      alert(
+        `${quizName} Level ${level} has only ${questions.length} questions. It needs ${QUESTIONS_PER_LEVEL} questions.`
+      );
+      return;
+    }
+
+    questions = questions.slice(0, QUESTIONS_PER_LEVEL);
+
     document.getElementById("start-screen").style.display = "none";
     document.getElementById("quiz-container").style.display = "block";
-    document.getElementById("quiz-title").textContent = `${quizName} - Level ${level}`;
+    document.getElementById("quiz-title").textContent = `${quizName} - Level ${level} (${QUESTIONS_PER_LEVEL} Questions)`;
 
     initMuteButton();
 
@@ -387,8 +422,23 @@ function finishQuiz() {
   document.getElementById("quiz-container").style.display = "none";
   document.getElementById("result-screen").style.display = "block";
 
+  const didPassLevel = score >= PASSING_SCORE;
   const scoreText = `You scored ${score} out of ${questions.length}.`;
-  document.getElementById("score-text").textContent = scoreText;
+  let unlockText = "";
+
+  if (didPassLevel && currentLevel > getMaxPassedLevel(currentQuiz)) {
+    userProgress[currentQuiz] = currentLevel;
+  }
+
+  if (currentLevel === 1) {
+    unlockText = didPassLevel
+      ? `Level 2 unlocked for ${currentQuiz}.`
+      : `Score at least ${PASSING_SCORE}/${QUESTIONS_PER_LEVEL} in Level 1 to unlock Level 2.`;
+  }
+
+  document.getElementById("score-text").textContent = unlockText
+    ? `${scoreText} ${unlockText}`
+    : scoreText;
 
   // Save result to database
   if (authToken) {
@@ -403,9 +453,13 @@ function finishQuiz() {
   }
 
   // Play level up sound if score is 80% or higher
-  if (score / questions.length >= 0.8) {
+  if (didPassLevel) {
     playLevelUpSound();
-    speak(`Congratulations! Level ${currentLevel} complete! ` + scoreText);
+    if (currentLevel === 1) {
+      speak(`Congratulations! Level ${currentLevel} complete. Level 2 is now unlocked. ${scoreText}`);
+    } else {
+      speak(`Congratulations! Level ${currentLevel} complete! ${scoreText}`);
+    }
   } else {
     speak(scoreText);
   }
@@ -591,7 +645,9 @@ async function renderStartScreen() {
         padding: 20px;
         background: white;
         animation: border-color-change 5s infinite;
-        max-width: 600px;
+        width: min(1100px, calc(100% - 24px));
+        max-width: 1100px;
+        box-sizing: border-box;
         margin: 20px auto;
         box-shadow: 0 4px 15px rgba(0,0,0,0.1);
       }
@@ -650,38 +706,91 @@ async function renderStartScreen() {
       }
       #quiz-buttons { 
         display: grid; 
-        grid-template-columns: repeat(2, 1fr); 
+        grid-template-columns: repeat(2, minmax(0, 1fr)); 
         gap: 20px; 
+        width: 100%;
+        max-width: 100%;
         padding: 0 10px;
+        box-sizing: border-box;
       }
-      #quiz-buttons button { 
-        width: 100%; 
-        padding: 20px; 
-        font-size: 1.1rem; 
-        cursor: pointer; 
-        border-radius: 12px; 
-        border: 1px solid #e0e0e0; 
-        background: #ffffff; 
-        transition: all 0.3s ease; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+      .quiz-card {
+        background: #ffffff;
+        border: 1px solid #e7e7e7;
+        border-radius: 12px;
+        padding: 14px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.06);
+        min-width: 0;
+        box-sizing: border-box;
+      }
+      .quiz-card h3 {
+        margin: 0 0 8px;
+        color: #2d3436;
+      }
+      .quiz-lock-note {
+        margin: 0 0 12px;
+        font-size: 0.9rem;
+        color: #636e72;
+      }
+      .quiz-level-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .quiz-level-btn {
+        width: 100%;
+        padding: 12px;
+        font-size: 0.95rem;
+        cursor: pointer;
+        border-radius: 10px;
+        border: 1px solid #dcdde1;
+        background: #ffffff;
+        transition: all 0.2s ease;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
         font-weight: 600;
-        color: #444;
+        color: #2d3436;
+        margin: 0;
+        height: auto;
+        min-height: 96px;
+        box-sizing: border-box;
       }
-      #quiz-buttons button:hover { 
-        background: #f8f9fa; 
-        transform: translateY(-5px); 
-        box-shadow: 0 8px 15px rgba(0,0,0,0.1); 
+      .quiz-level-btn:hover {
+        transform: translateY(-2px);
         border-color: #6c5ce7;
         color: #6c5ce7;
       }
+      .quiz-level-btn.locked {
+        cursor: not-allowed;
+        background: #f1f2f6;
+        color: #999;
+        border-color: #dfe4ea;
+        box-shadow: none;
+      }
+      .quiz-level-btn.locked:hover {
+        transform: none;
+        color: #999;
+        border-color: #dfe4ea;
+      }
       .add-quiz-btn {
-        grid-column: span 2;
+        grid-column: 1 / -1;
         background: linear-gradient(135deg, #6c5ce7, #a29bfe) !important;
         color: white !important;
         padding: 15px !important;
         border-radius: 12px !important;
         font-weight: 700 !important;
         margin-top: 10px !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+      }
+      #quiz-buttons .quiz-level-btn::before,
+      #quiz-buttons .add-quiz-btn::before {
+        content: none !important;
+      }
+      @media (max-width: 700px) {
+        #quiz-buttons {
+          grid-template-columns: 1fr;
+        }
       }
     `;
     document.head.appendChild(style);
@@ -697,6 +806,31 @@ async function renderStartScreen() {
     return `<span class="letter" style="color: ${color}; animation-delay: ${i * 0.1}s">${char}</span>`;
   }).join("");
 
+  const quizCards = QUIZ_CATEGORIES.map((quizName) => {
+    const level2Unlocked = isLevelUnlocked(quizName, 2);
+    const levelStatus = level2Unlocked
+      ? "Level 2 is unlocked."
+      : `Score ${PASSING_SCORE}/${QUESTIONS_PER_LEVEL} in Level 1 to unlock Level 2.`;
+
+    return `
+      <div class="quiz-card">
+        <h3>${escapeHtml(quizName)}</h3>
+        <p class="quiz-lock-note">${escapeHtml(levelStatus)}</p>
+        <div class="quiz-level-row">
+          <button type="button" class="quiz-level-btn" onclick="startLevelQuiz('${escapeJs(quizName)}', 1)">Level 1</button>
+          <button
+            type="button"
+            class="quiz-level-btn ${level2Unlocked ? "" : "locked"}"
+            onclick="startLevelQuiz('${escapeJs(quizName)}', 2)"
+            ${level2Unlocked ? "" : "disabled"}
+          >
+            Level 2${level2Unlocked ? "" : " (Locked)"}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
   startScreen.innerHTML = `
     <div class="start-container">
       <div class="user-info">
@@ -705,10 +839,7 @@ async function renderStartScreen() {
       </div>
       <h1>${animatedTitle}</h1>
       <div id="quiz-buttons">
-        <button type="button" onclick="loadQuiz('General Knowledge')">General Knowledge</button>
-        <button type="button" onclick="loadQuiz('Mathematics')">Mathematics</button>
-        <button type="button" onclick="loadQuiz('Politics')">Politics</button>
-        <button type="button" onclick="loadQuiz('Nature')">Nature</button>
+        ${quizCards}
         <button type="button" onclick="showLeaderboard()" class="add-quiz-btn" style="background: linear-gradient(135deg, #f1c40f, #f39c12) !important;">🏆 View Leaderboard</button>
         <button type="button" onclick="renderAddQuestionScreen()" class="add-quiz-btn">➕ Add New Question</button>
       </div>
@@ -725,7 +856,7 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
     const startScreen = document.getElementById("start-screen");
     if (!startScreen) return;
 
-    const categories = ["General Knowledge", "Mathematics", "Politics", "Nature"];
+    const categories = QUIZ_CATEGORIES;
 
     startScreen.innerHTML = `
       <div class="start-container">
