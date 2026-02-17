@@ -1126,6 +1126,28 @@ app.delete("/api/admin/results/:resultId", adminAuthMiddleware, async (req, res)
   }
 });
 
+app.delete("/api/admin/results", adminAuthMiddleware, async (req, res) => {
+  try {
+    if (!(await ensureMongoConnection())) {
+      return res.status(503).json({ error: "Database not available. Cannot clear results." });
+    }
+
+    const filter = {};
+    const quiz = String(req.query?.quiz || "").trim();
+    if (quiz) {
+      filter.quiz = quiz;
+    }
+
+    const deleteResult = await Result.deleteMany(filter);
+    return res.json({
+      message: quiz ? "Results cleared for quiz" : "All results cleared",
+      deletedCount: deleteResult.deletedCount || 0,
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Failed to clear results" });
+  }
+});
+
 // ==================== QUIZ ROUTES ====================
 app.get("/api/questions", authMiddleware, async (req, res) => {
   try {

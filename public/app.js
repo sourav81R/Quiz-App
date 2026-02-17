@@ -1588,6 +1588,7 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
     if (!startScreen) return;
 
     const categories = QUIZ_CATEGORIES;
+    const isAdminUser = Boolean(authToken && currentUser && currentUser.isAdmin);
     const canManageHistory = Boolean(authToken && currentUser && currentUser.id && !currentUser.isAdmin);
 
     startScreen.innerHTML = `
@@ -1638,6 +1639,16 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
             Clear My History
           </button>
         `;
+      } else if (isAdminUser) {
+        actionsContainer.innerHTML = `
+          <button
+            onclick="clearAllLeaderboardHistory('${escapeJs(quizFilter)}', '${escapeJs(searchTerm)}')"
+            class="logout-btn"
+            style="background:#ff6b6b; margin:0; padding:8px 14px; border-radius:10px; font-size:0.9rem;"
+          >
+            Clear All History
+          </button>
+        `;
       } else {
         actionsContainer.innerHTML = `
           <button
@@ -1655,6 +1666,8 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
     if (manageNote) {
       manageNote.textContent = canManageHistory
         ? "You can delete only your own entries."
+        : isAdminUser
+        ? "Admin can delete any leaderboard entry and clear all history."
         : "Login to manage your own history.";
     }
 
@@ -1665,15 +1678,18 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
           ? data
               .map((entry, i) => {
                 const canDelete =
-                  canManageHistory &&
-                  entry &&
-                  entry._id &&
-                  ((entry.userId && String(entry.userId) === String(currentUser.id)) ||
-                    (entry.authUid && String(entry.authUid) === String(currentUser.id)) ||
-                    (entry.authEmail &&
-                      currentUser.email &&
-                      String(entry.authEmail).toLowerCase() === String(currentUser.email).toLowerCase()) ||
-                    (!entry.userId && !entry.authUid && !entry.authEmail && entry.username === currentUser.name));
+                  Boolean(authToken && entry && entry._id) &&
+                  (currentUser?.isAdmin ||
+                    (canManageHistory &&
+                      ((entry.userId && String(entry.userId) === String(currentUser.id)) ||
+                        (entry.authUid && String(entry.authUid) === String(currentUser.id)) ||
+                        (entry.authEmail &&
+                          currentUser.email &&
+                          String(entry.authEmail).toLowerCase() === String(currentUser.email).toLowerCase()) ||
+                        (!entry.userId &&
+                          !entry.authUid &&
+                          !entry.authEmail &&
+                          entry.username === currentUser.name))));
 
                 return `
                   <div class="leaderboard-item">
@@ -1707,6 +1723,11 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
 }
 
 async function clearMyLeaderboardHistory(quizFilter = "", searchTerm = "") {
+  if (currentUser?.isAdmin) {
+    await clearAllLeaderboardHistory(quizFilter, searchTerm);
+    return;
+  }
+
   if (!authToken) {
     alert("Please login to manage history.");
     return;
@@ -1742,6 +1763,27 @@ async function clearMyLeaderboardHistory(quizFilter = "", searchTerm = "") {
   }
 }
 
+async function clearAllLeaderboardHistory(quizFilter = "", searchTerm = "") {
+  if (!currentUser?.isAdmin) {
+    alert("Admin access required.");
+    return;
+  }
+
+  const target = quizFilter ? `all ${quizFilter} history` : "all history";
+  if (!confirm(`Delete ${target} for every user? This action cannot be undone.`)) {
+    return;
+  }
+
+  const query = quizFilter ? `?quiz=${encodeURIComponent(quizFilter)}` : "";
+  const data = await adminRequest(`/api/admin/results${query}`, {
+    method: "DELETE",
+  });
+  if (!data) return;
+
+  alert(`Deleted ${data.deletedCount || 0} record(s).`);
+  await showLeaderboard(quizFilter, searchTerm);
+}
+
 async function deleteLeaderboardEntry(resultId, quizFilter = "", searchTerm = "") {
   if (!authToken) {
     alert("Please login to manage history.");
@@ -1754,6 +1796,15 @@ async function deleteLeaderboardEntry(resultId, quizFilter = "", searchTerm = ""
   }
 
   if (!confirm("Delete this entry?")) {
+    return;
+  }
+
+  if (currentUser?.isAdmin) {
+    const data = await adminRequest(`/api/admin/results/${encodeURIComponent(resultId)}`, {
+      method: "DELETE",
+    });
+    if (!data) return;
+    await showLeaderboard(quizFilter, searchTerm);
     return;
   }
 
