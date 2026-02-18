@@ -889,6 +889,45 @@ function escapeJs(str) {
   return String(str).replace(/'/g, "\\'");
 }
 
+function renderSocialFooter() {
+  return `
+      <footer class="social-footer" aria-label="Social links">
+        <div class="footer-meta">
+          <p class="footer-copy">Copyright &copy; 2026 Quiz-App. All rights reserved.</p>
+          <p class="footer-dev">
+            Developed by
+            <a
+              class="footer-dev-link"
+              href="https://portfolio-topaz-eight-91.vercel.app"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Sourav Chowdhury
+            </a>
+          </p>
+        </div>
+        <div class="social-links">
+          <a class="social-link" href="https://github.com/sourav81R" target="_blank" rel="noopener noreferrer" aria-label="GitHub profile">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M12 2c-5.52 0-10 4.48-10 10 0 4.42 2.87 8.16 6.85 9.49.5.09.68-.22.68-.48 0-.24-.01-1.03-.01-1.87-2.78.6-3.37-1.18-3.37-1.18-.45-1.15-1.11-1.45-1.11-1.45-.91-.62.07-.61.07-.61 1.01.07 1.54 1.04 1.54 1.04.89 1.53 2.34 1.09 2.91.84.09-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.93 0-1.09.39-1.98 1.03-2.67-.1-.26-.45-1.3.1-2.72 0 0 .84-.27 2.75 1.02A9.5 9.5 0 0 1 12 6.84c.85 0 1.7.11 2.5.33 1.9-1.29 2.74-1.02 2.74-1.02.55 1.42.2 2.46.1 2.72.64.69 1.03 1.58 1.03 2.67 0 3.83-2.34 4.67-4.57 4.92.36.31.68.93.68 1.88 0 1.36-.01 2.46-.01 2.79 0 .27.18.58.69.48A10 10 0 0 0 22 12c0-5.52-4.48-10-10-10z"></path>
+            </svg>
+          </a>
+          <a class="social-link" href="https://linkedin.com/in/souravchowdhury-2003r" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn profile">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path fill="currentColor" d="M6.94 8.5a2.1 2.1 0 1 1 0-4.2 2.1 2.1 0 0 1 0 4.2zm-1.8 2h3.6V20h-3.6V10.5zm6 0h3.44v1.3h.05c.48-.9 1.66-1.84 3.41-1.84 3.65 0 4.32 2.4 4.32 5.52V20h-3.6v-4.03c0-.96-.02-2.2-1.34-2.2-1.34 0-1.54 1.05-1.54 2.13V20h-3.6V10.5z"></path>
+            </svg>
+          </a>
+          <a class="social-link" href="https://portfolio-topaz-eight-91.vercel.app" target="_blank" rel="noopener noreferrer" aria-label="Portfolio website">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"></circle>
+              <path d="M3 12h18M12 3a14 14 0 0 0 0 18M12 3a14 14 0 0 1 0 18" fill="none" stroke="currentColor" stroke-width="1.8"></path>
+            </svg>
+          </a>
+        </div>
+      </footer>
+  `;
+}
+
 // ================== RESTART QUIZ ==================
 function restartQuiz() {
   clearTimers();
@@ -1297,6 +1336,7 @@ async function renderStartScreen() {
             : '<button type="button" onclick="renderAddQuestionScreen()" class="add-quiz-btn">➕ Add New Question</button>'
         }
       </div>
+      ${renderSocialFooter()}
     </div>
   `;
 }
@@ -1478,6 +1518,7 @@ async function showAdminPanel() {
         </div>
 
         <button onclick="renderStartScreen()" class="logout-btn" style="background: #b2bec3; width: 100%; margin-top: 14px;">Back to Menu</button>
+        ${renderSocialFooter()}
       </div>
     `;
   } catch (err) {
@@ -1623,6 +1664,7 @@ async function showLeaderboard(quizFilter = "", searchTerm = "") {
         </div>
         <p id="leaderboard-manage-note" style="margin: 5px 10px 0; font-size: 0.8rem; color: #777; text-align: right;"></p>
         <button onclick="renderStartScreen()" class="logout-btn" style="background: #b2bec3; width: 100%; margin-top: 20px;">Back to Menu</button>
+        ${renderSocialFooter()}
       </div>
     `;
 
@@ -1878,6 +1920,7 @@ function renderAddQuestionScreen() {
       <h2 style="margin: 0 0 8px;">Your Questions</h2>
       <p style="margin: 0 0 14px; color: #666; text-align: center;">You can edit or delete only questions created by you.</p>
       <div id="user-questions-list" style="display:flex; flex-direction:column; gap:12px;"></div>
+      ${renderSocialFooter()}
     </div>
   `;
 

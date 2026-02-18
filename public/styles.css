@@ -687,6 +687,76 @@ button:hover {
   outline: none;
 }
 
+/* ===== Signed-in Footer ===== */
+.social-footer {
+  margin: 24px 10px 0;
+  padding: 14px 16px;
+  border-top: 1px solid #d9dde3;
+  background: #eceff4;
+  border-radius: 10px;
+}
+
+.footer-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.footer-copy,
+.footer-dev {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #4d5a6a;
+}
+
+.footer-dev {
+  white-space: nowrap;
+}
+
+.footer-dev-link {
+  color: #0f8b8d;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.social-links {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.social-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  background: #f7f8fc;
+  border: 1px solid #e6e9f0;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  color: #2f3542;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.social-link:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(45, 52, 54, 0.15);
+  background: #ffffff;
+  color: #1d6fd1;
+}
+
+.social-link svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+}
+
 /* ===== Responsive Layout ===== */
 @media (max-width: 1024px) {
   #quiz-container,
@@ -781,6 +851,27 @@ button:hover {
 
   .leaderboard-item {
     padding: 10px 12px;
+  }
+
+  .social-footer {
+    margin: 20px 0 0;
+    padding: 12px;
+  }
+
+  .footer-meta {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .social-links {
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .social-link {
+    width: 42px;
+    height: 42px;
   }
 }
 
